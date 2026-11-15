@@ -12,8 +12,11 @@ prefers old editions.
 """
 from __future__ import annotations
 
+import gzip
 import html
 import re
+import threading
+from pathlib import Path
 
 import httpx
 
@@ -21,6 +24,13 @@ from .. import config
 
 GUTENDEX = "https://gutendex.com/books"
 CACHE = config.DATA_DIR / "books"
+UA = {"User-Agent": "CartoonForge/1.0 (+https://github.com/ashwin-j23/CartoonForge)"}
+# gutenberg.org sometimes refuses everyone (403 "unable to read htaccess") or blocks cloud servers; the official
+# PGLAF mirror and xmission carry the same files and the weekly catalogue.
+MIRROR = "https://gutenberg.pglaf.org"
+# Search index of every English Gutenberg text, shipped with the code (scripts/update_book_index.py rebuilds it):
+# search works instantly even when gutenberg.org is down, and the mirror is too slow to download it per request.
+INDEX = Path(__file__).with_name("gutenberg_index.tsv.gz")
 
 # Verified Gutenberg ids (titles checked against gutenberg.org on 2026-11-06): id, title, author, why, group.
 # Any public-domain book works (search covers the whole catalogue); the Writer adapts grown-up classics gently.
@@ -75,11 +85,25 @@ def _txt_url(gid: int) -> str:
     return f"https://www.gutenberg.org/cache/epub/{int(gid)}/pg{int(gid)}.txt"
 
 
+def _tree(gid: int) -> str:
+    """Gutenberg's mirror folder layout: 19994 -> 1/9/9/9/19994, 5 -> 0/5."""
+    d = str(int(gid))
+    return f"{'/'.join(d[:-1]) if len(d) > 1 else '0'}/{d}"
+
+
+def _txt_urls(gid: int) -> list[str]:
+    g, tree = int(gid), _tree(gid)
+    return [_txt_url(g), f"{MIRROR}/cache/epub/{g}/pg{g}.txt",
+            f"{MIRROR}/{tree}/{g}-0.txt", f"{MIRROR}/{tree}/{g}.txt",
+            f"https://mirrors.xmission.com/gutenberg/{tree}/{g}-0.txt",
+            f"https://mirrors.xmission.com/gutenberg/{tree}/{g}.txt"]
+
+
 def _gutendex_search(q: str, children: bool, limit: int) -> list[dict]:
     params = {"search": q, "languages": "en"}
     if children:
         params["topic"] = "children"
-    r = httpx.get(GUTENDEX, params=params, timeout=15, follow_redirects=True)
+    r = httpx.get(GUTENDEX, params=params, timeout=12, follow_redirects=True, headers=UA)
     r.raise_for_status()
     out = []
     for b in r.json().get("results", [])[:limit]:
@@ -94,8 +118,8 @@ def _gutendex_search(q: str, children: bool, limit: int) -> list[dict]:
 def _opds_search(q: str, children: bool, limit: int) -> list[dict]:
     """Fallback: Project Gutenberg's own catalogue feed (fast, always up). Results come in relevance order."""
     query = q + (" children" if children and "child" not in q.lower() else "")
-    r = httpx.get("https://www.gutenberg.org/ebooks/search.opds/", params={"query": query}, timeout=30,
-                  follow_redirects=True, headers={"User-Agent": "CartoonForge/1.0"})
+    r = httpx.get("https://www.gutenberg.org/ebooks/search.opds/", params={"query": query}, timeout=12,
+                  follow_redirects=True, headers=UA)
     r.raise_for_status()
     out = []
     for e in re.findall(r"<entry>(.*?)</entry>", r.text, re.S):
@@ -114,16 +138,67 @@ def _opds_search(q: str, children: bool, limit: int) -> list[dict]:
     return out
 
 
+_catalog: list[tuple] | None = None
+_catalog_lock = threading.Lock()
+
+
+def _load_catalog() -> list[tuple]:
+    """Bundled index rows: (id, title, authors, subjects, kids flag, lowercased search text). Loaded once."""
+    global _catalog
+    with _catalog_lock:
+        if _catalog is None:
+            rows = []
+            with gzip.open(INDEX, "rt", encoding="utf-8") as fh:
+                for line in fh:
+                    p = line.rstrip("\n").split("\t")
+                    if len(p) != 5:
+                        continue
+                    gid, title, authors, kids, subjects = p
+                    names = [a.strip() for a in authors.split(";") if a.strip()]
+                    rows.append((int(gid), title, names, subjects, kids == "1",
+                                 f"{title} {authors} {subjects}".lower()))
+            _catalog = rows
+        return _catalog
+
+
+def _catalog_search(q: str, children: bool, limit: int) -> list[dict]:
+    words = [w for w in re.findall(r"[a-z0-9']+", q.lower()) if len(w) > 1]
+    if not words:
+        return []
+    scored = []
+    for gid, title, authors, tags, is_kid, text in _load_catalog():
+        if not all(w in text for w in words):
+            continue
+        if children and not is_kid:
+            continue
+        tl = title.lower()
+        score = sum(3 for w in words if w in tl) + (2 if is_kid else 0) + (1 if q.lower() in tl else 0)
+        scored.append((score, -gid, gid, title, authors, tags))
+    scored.sort(reverse=True)
+    out = []
+    for i, (_, _, gid, title, authors, tags) in enumerate(scored[:limit]):
+        subjects = [s.strip() for s in tags.split(";") if s.strip()][:5]
+        out.append({"id": gid, "title": title, "authors": authors, "subjects": subjects, "downloads": 1000 - i,
+                    "url": f"https://www.gutenberg.org/ebooks/{gid}"})
+    if not out and children:
+        return _catalog_search(q, False, limit)
+    return out
+
+
 def search(q: str, children: bool = False, limit: int = 25) -> list[dict]:
-    """Gutenberg's own catalogue first (fast, always up); Gutendex (slow, often times out) only as a fallback.
-    Copyrighted books are refused later, when the text is opened (book())."""
-    try:
-        hits = _opds_search(q, children, limit)
-        if hits:
-            return hits
-    except httpx.HTTPError:
-        pass
-    return _gutendex_search(q, children, limit)
+    """Gutenberg's own search first; when gutenberg.org refuses or is down, the weekly catalogue from the official
+    mirror; Gutendex (slow, often times out) last. Copyrighted books are refused when the text is opened (book())."""
+    errors = []
+    for fn in (_opds_search, _catalog_search, _gutendex_search):
+        try:
+            hits = fn(q, children, limit)
+            if hits:
+                return hits
+        except (httpx.HTTPError, OSError, ValueError) as e:
+            errors.append(e)
+    if errors and len(errors) == 3:
+        raise httpx.HTTPError(f"all Gutenberg sources failed: {errors[-1]}")
+    return []
 
 
 def shelf() -> list[dict]:
@@ -137,13 +212,26 @@ def _raw(gid: int) -> str:
     f = CACHE / f"{int(gid)}.raw.txt"
     if f.exists():
         return f.read_text(encoding="utf-8", errors="ignore")
-    r = httpx.get(_txt_url(gid), timeout=60, follow_redirects=True, headers={"User-Agent": "CartoonForge/1.0"})
-    if r.status_code == 404:
+    missing, last_err = 0, None
+    urls = _txt_urls(gid)
+    for url in urls:                                     # gutenberg.org, then the official mirrors
+        try:
+            r = httpx.get(url, timeout=30, follow_redirects=True, headers=UA)
+        except httpx.HTTPError as e:
+            last_err = e
+            continue
+        if r.status_code == 404:
+            missing += 1
+            continue
+        if r.status_code != 200 or len(r.content) < 500:
+            last_err = httpx.HTTPStatusError(f"{r.status_code} from {url}", request=r.request, response=r)
+            continue
+        raw = r.content.decode("utf-8", errors="ignore")
+        f.write_text(raw, encoding="utf-8")
+        return raw
+    if missing and last_err is None:
         raise ValueError("No plain-text version of this book")
-    r.raise_for_status()
-    raw = r.content.decode("utf-8", errors="ignore")
-    f.write_text(raw, encoding="utf-8")
-    return raw
+    raise last_err or httpx.HTTPError("Project Gutenberg and its mirrors are unreachable")
 
 
 def book(gid: int) -> dict:
