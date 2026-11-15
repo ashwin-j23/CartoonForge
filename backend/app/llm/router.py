@@ -140,6 +140,8 @@ def _call(p: Provider, system: str, user: str, temperature: float, max_tokens: i
     elif "nemotron" in model or "deepseek-r1" in model:
         body["messages"][0]["content"] = "/no_think\n" + system
         body["max_tokens"] = max_tokens + 2000
+    if p.name == "groq":                                     # free tier counts max_tokens against tokens/minute
+        body["max_tokens"] = min(body["max_tokens"], 5000)
     if json_mode and p.name in ("openai", "groq", "gemini", "mistral", "cerebras"):
         body["response_format"] = {"type": "json_object"}
     headers = {"Authorization": f"Bearer {key}"}
@@ -258,10 +260,9 @@ def extract_json(text: str):
         return json.loads(t)
     except Exception:
         pass
-    for open_c, close_c in (("{", "}"), ("[", "]")):
-        start = t.find(open_c)
-        if start == -1:
-            continue
+    firsts = [(t.find(o), o, c) for o, c in (("{", "}"), ("[", "]")) if t.find(o) >= 0]
+    # only the TOP-LEVEL value: never a fragment nested inside a cut-off reply (e.g. its "key_words" list)
+    for start, open_c, close_c in sorted(firsts)[:1]:
         depth, in_str, esc = 0, False, False
         for i in range(start, len(t)):
             c = t[i]
@@ -333,7 +334,7 @@ def repair_truncated(text: str):
     return json.loads(t[start:cut] + "".join(reversed(rest)))
 
 
-def complete_json(system: str, user, **kw):
+def complete_json(system: str, user, salvage: bool = True, **kw):
     """JSON completion. A reply cut off by the token limit is salvaged; otherwise it is asked again with more room,
     then on another provider."""
     text, used = complete(system, user, json_mode=True, **kw)
@@ -341,12 +342,13 @@ def complete_json(system: str, user, **kw):
         return extract_json(text), used
     except Exception:  # noqa: BLE001
         pass
-    try:
-        data = repair_truncated(text)
-        if data:
-            return data, used
-    except (ValueError, json.JSONDecodeError):
-        pass
+    if salvage:                                              # partial lists are fine (scenes), outlines are not
+        try:
+            data = repair_truncated(text)
+            if data:
+                return data, used
+        except (ValueError, json.JSONDecodeError):
+            pass
     again = "\n\nReturn ONLY valid minified JSON. No prose. Keep it compact."
     user2 = user + again if isinstance(user, str) else user + [{"type": "text", "text": again}]
     kw2 = {**kw, "max_tokens": int(kw.get("max_tokens", 1500) * 1.8)}

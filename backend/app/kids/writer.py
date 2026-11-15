@@ -89,7 +89,8 @@ def outline(category: dict, topic: str, band_id: str, minutes: float, lang: str 
             "\"song_idea\": str (only for song)}]}\n"
             f"Minutes must add up to about {minutes:.0f}. hello ≈ 0.6, goodbye ≈ 0.6, recap ≈ 1, songs ≈ 1.2-1.6, "
             f"others share the rest (each 1.5-{b['segment'] + 0.6:.1f}).")
-    data, _ = complete_json(system, user, temperature=0.8, max_tokens=2500)
+    data, _ = complete_json(system, user + "\nReturn compact (minified) JSON.", temperature=0.8, max_tokens=6000,
+                            salvage=False)
     if isinstance(data, list):                         # some models answer with the bare list
         data = {"segments": data}
     if not isinstance(data, dict):
@@ -148,7 +149,7 @@ def write_segment(seg: dict, plan: dict, category: dict, band_id: str, prev_tail
             "Keep lines short and lively: many short lines beat a few long ones (each line is its own shot).\n\n"
             f"{SCENE_SPEC % (cast.SPEAKERS + [g['id'] for g in plan.get('characters') or []])}\n{CARD_SPEC}{', '.join(_objects())}\n\n"
             "Return JSON: {\"scenes\": [ ... ]}")
-    data, _ = complete_json(system, user, temperature=0.85, max_tokens=4000)
+    data, _ = complete_json(system, user + "\nReturn compact (minified) JSON.", temperature=0.85, max_tokens=6000)
     scenes = data if isinstance(data, list) else (data.get("scenes") or [] if isinstance(data, dict) else [])
     return clean_scenes(scenes, seg, category, {g["id"] for g in plan.get("characters") or []})
 

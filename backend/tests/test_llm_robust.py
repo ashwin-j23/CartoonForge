@@ -50,3 +50,22 @@ def test_writer_accepts_bare_lists(monkeypatch):
     monkeypatch.setattr(writer, "complete_json", lambda *a, **k: (segs, "gemini"))
     plan = writer.outline(writer.categories.get("science"), "Sky", "preschool", 8, "en", None, "")
     assert len(plan["segments"]) == 6
+
+
+def test_extract_json_never_returns_a_nested_fragment():
+    cut = '{"title_idea": "Moon", "key_words": ["moon", "night", "sky", "glow"], "segments": [{"kind": "hello", "be'
+    with pytest.raises(router.LLMError):
+        router.extract_json(cut)                                   # used to return the key_words list
+    assert router.extract_json('Sure! {"a": [1, 2]} hope this helps') == {"a": [1, 2]}
+    assert router.extract_json('[{"x": 1}, {"x": 2},]') == [{"x": 1}, {"x": 2}]
+
+
+def test_outline_is_never_salvaged(monkeypatch):
+    calls = []
+
+    def fake_complete(system, user, json_mode=False, **kw):
+        calls.append(kw)
+        return ('{"segments": [{"kind": "hello"}, {"kind": "le' if len(calls) == 1 else '{"segments": []}'), "gemini"
+    monkeypatch.setattr(router, "complete", fake_complete)
+    data, _ = router.complete_json("s", "u", salvage=False, max_tokens=6000)
+    assert data == {"segments": []} and len(calls) == 2 and calls[1]["max_tokens"] == 10800
