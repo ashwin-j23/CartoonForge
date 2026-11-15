@@ -103,3 +103,7 @@ characters and sets once (cached) plus a light per-frame pass; paper cutout anim
 film. `auto` (default) lets the optimizer test looks on real viewers and keep the ones that hold children best, but
 only looks that suit the episode's age band: classic and paper for every age, comic from 3, pixel/anime for 6–12s,
 and PS2/risograph (mostly grown-up nostalgia) for big kids only.
+
+## License
+
+Code: [MIT](LICENSE). Fonts in `backend/assets/fonts` keep their own SIL Open Font License.
