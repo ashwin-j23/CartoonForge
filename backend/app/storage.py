@@ -1,7 +1,15 @@
-"""Media storage: Supabase Storage (public bucket) or local disk."""
+"""Media storage: Supabase Storage (public bucket) or local disk.
+
+Supabase's free plan refuses files over 50 MB, and a 1080p episode is bigger. A large video is therefore stored
+as (1) its full-quality bytes in 45 MB parts + a small manifest, and (2) a 540p preview under the limit at the
+normal key, so players keep working. fetch() joins the parts back into the exact original for YouTube, Shorts
+and compilations.
+"""
 from __future__ import annotations
 
+import json
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -14,17 +22,58 @@ def _public_local(key: str) -> str:
     return f"{config.PUBLIC_BASE_URL}/media/{key}" if config.PUBLIC_BASE_URL else f"/media/{key}"
 
 
+PART_BYTES = int(float(config.env("STORAGE_PART_MB", "45")) * 1_000_000)   # under Supabase free's 50 MB/file
+
+
+def _supabase() -> bool:
+    return bool(config.SUPABASE_URL and config.SUPABASE_SERVICE_KEY)
+
+
+def _upload_bytes(data: bytes, key: str, content_type: str) -> None:
+    url = f"{config.SUPABASE_URL}/storage/v1/object/{config.SUPABASE_BUCKET}/{key}"
+    r = httpx.post(url, content=data, timeout=300, headers={
+        **config.supabase_headers(),
+        "Content-Type": content_type, "x-upsert": "true", "cache-control": "max-age=31536000"})
+    if r.status_code >= 400:
+        raise RuntimeError(f"Storage upload failed {r.status_code}: {r.text[:200]}")
+
+
+def _preview(local: Path, limit: int) -> Path:
+    """A 540p copy under `limit` bytes for the dashboard player (the full file is kept in parts)."""
+    from .render.episode import probe_duration
+    out = Path(tempfile.mkstemp(suffix=".mp4", dir=config.WORK_DIR)[1])
+    secs = max(1.0, probe_duration(local))
+    base = [config.FFMPEG, "-y", "-loglevel", "error", "-i", str(local), "-vf", "scale=-2:540",
+            "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", "-preset", "veryfast"]
+    subprocess.run(base + ["-crf", "28", str(out)], check=True)
+    if out.stat().st_size > limit:                       # long episode: fit the size exactly with a bitrate
+        kbps = max(150, int(limit * 8 * 0.92 / secs / 1000) - 96)
+        subprocess.run(base + ["-b:v", f"{kbps}k", "-maxrate", f"{kbps}k", "-bufsize", f"{kbps * 2}k", str(out)],
+                       check=True)
+    return out
+
+
 def put(local: Path, key: str, content_type: str) -> str:
     """Store a file and return its URL (public URL when Supabase is used)."""
-    if config.SUPABASE_URL and config.SUPABASE_SERVICE_KEY:
-        url = f"{config.SUPABASE_URL}/storage/v1/object/{config.SUPABASE_BUCKET}/{key}"
-        with open(local, "rb") as f:
-            r = httpx.post(url, content=f.read(), timeout=300, headers={
-                **config.supabase_headers(),
-                "Content-Type": content_type, "x-upsert": "true", "cache-control": "max-age=31536000"})
-        if r.status_code >= 400:
-            raise RuntimeError(f"Storage upload failed {r.status_code}: {r.text[:200]}")
-        return f"{config.SUPABASE_URL}/storage/v1/object/public/{config.SUPABASE_BUCKET}/{key}"
+    if _supabase():
+        local = Path(local)
+        size = local.stat().st_size
+        if size > PART_BYTES and content_type.startswith("video/"):
+            n = 0
+            with open(local, "rb") as f:
+                while chunk := f.read(PART_BYTES):
+                    _upload_bytes(chunk, f"{key}.part{n:03d}", "application/octet-stream")
+                    n += 1
+            _upload_bytes(json.dumps({"parts": n, "size": size, "part_bytes": PART_BYTES}).encode(),
+                          f"{key}.parts.json", "application/octet-stream")
+            prev = _preview(local, PART_BYTES)
+            try:
+                _upload_bytes(prev.read_bytes(), key, content_type)
+            finally:
+                prev.unlink(missing_ok=True)
+        else:
+            _upload_bytes(local.read_bytes(), key, content_type)
+        return key_url(key)
     dest = config.MEDIA_DIR / key
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -77,10 +126,24 @@ def key_url(key: str) -> str:
     return _public_local(key)
 
 
+def _manifest(url: str) -> dict | None:
+    """The parts manifest of a large video, or None for a normal single file."""
+    try:
+        r = httpx.get(url + ".parts.json", timeout=30, follow_redirects=True)
+        return r.json() if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
 def remove(keys: list[str]) -> None:
     if not keys:
         return
-    if config.SUPABASE_URL and config.SUPABASE_SERVICE_KEY:
+    if _supabase():
+        extra = []
+        for k in keys:
+            if k.endswith(".mp4") and (m := _manifest(key_url(k))):
+                extra += [f"{k}.part{i:03d}" for i in range(int(m.get("parts", 0)))] + [f"{k}.parts.json"]
+        keys = list(keys) + extra
         httpx.request("DELETE", f"{config.SUPABASE_URL}/storage/v1/object/{config.SUPABASE_BUCKET}",
                       json={"prefixes": keys}, timeout=60, headers={
                           **config.supabase_headers()})
@@ -95,11 +158,16 @@ def fetch(url_or_key: str) -> Path:
         key = url_or_key.split("/media/", 1)[1]
         return config.MEDIA_DIR / key
     tmp = Path(tempfile.mkstemp(suffix=".mp4", dir=config.WORK_DIR)[1])
-    with httpx.stream("GET", url_or_key, timeout=300, follow_redirects=True) as r:
-        r.raise_for_status()
-        with open(tmp, "wb") as f:
-            for chunk in r.iter_bytes(1 << 16):
-                f.write(chunk)
+    m = _manifest(url_or_key)                            # large video: join the full-quality parts
+    urls = [f"{url_or_key}.part{i:03d}" for i in range(int(m["parts"]))] if m else [url_or_key]
+    with open(tmp, "wb") as f:
+        for u in urls:
+            with httpx.stream("GET", u, timeout=300, follow_redirects=True) as r:
+                r.raise_for_status()
+                for chunk in r.iter_bytes(1 << 16):
+                    f.write(chunk)
+    if m and tmp.stat().st_size != int(m.get("size", -1)):
+        raise RuntimeError(f"Video parts incomplete: {tmp.stat().st_size} of {m.get('size')} bytes")
     return tmp
 
 

@@ -47,15 +47,19 @@ PROVIDERS: dict[str, Provider] = {p.name: p for p in [
 # Tried in order when the provider says a model is gone (404/410), since free
 # providers retire models often. A *_MODEL env/key override always goes first.
 MODEL_FALLBACKS: dict[str, list[str]] = {
-    "gemini": ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
-    "groq": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "qwen/qwen3.6-27b", "openai/gpt-oss-20b",
-             "meta-llama/llama-4-scout-17b-16e-instruct", "llama-3.1-8b-instant"],
+    # 2026-11-16: checked live; each model has its own free quota, so more models = more free capacity
+    "gemini": ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-lite-latest"],
+    "groq": ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"],
     "nvidia": ["nvidia/nemotron-3.5-super-vl-120b-a12b", "deepseek-ai/deepseek-v4.1-flash", "z-ai/glm-5.3-flash",
                "nvidia/llama-3.1-nemotron-ultra-253b-v1"],    # 2026-11-02: only the first answered fast on a free key
     "openrouter": ["meta-llama/llama-3.3-70b-instruct:free", "openai/gpt-oss-120b:free"],
 }
 # Free tiers rate-limit per model, so a 429 on one model moves on to the next instead of giving up.
-_RATE_LIMIT = re.compile(r"\b429\b|quota|rate limit|resource.?exhausted|too many requests", re.I)
+_RATE_LIMIT = re.compile(r"\b429\b|quota|rate limit|resource.?exhausted|too many requests|\b503\b|high demand|overloaded",
+                         re.I)
+# A wrong/expired key or an empty balance: that provider is unusable until the owner fixes it (not "busy").
+_BROKEN = re.compile(r"\b40[13]\b|invalid.{0,20}(api )?key|incorrect api key|authori[sz]ation failed|"
+                     r"credit balance|billing|insufficient.{0,10}(funds|quota|credit)", re.I)
 _MODEL_GONE = re.compile(r"\b(404|410)\b.*(model|gone|not found|does not exist|decommission|retired|no longer)", re.I | re.S)
 _working_model: dict[str, str] = {}
 
@@ -228,13 +232,15 @@ def complete(system: str, user, *, temperature: float = 0.9, max_tokens: int = 2
             msg = str(e)
             st["fail"] += 1
             st["last_error"] = msg[:200]
-            # rate limit / quota -> long cooldown, other errors -> short
-            _cooldown[name] = time.time() + (600 if _RATE_LIMIT.search(msg) else 60)
-            errors.append(f"{name}: {msg[:120]}")
+            # broken key / no credit -> skip for an hour; rate limit / quota -> 10 min; other errors -> 1 min
+            broken = bool(_BROKEN.search(msg)) and not _RATE_LIMIT.search(msg)
+            _cooldown[name] = time.time() + (3600 if broken else 600 if _RATE_LIMIT.search(msg) else 60)
+            errors.append(f"{name}: {'[key/billing] ' if broken else ''}{msg[:120]}")
     if not errors:
         raise LLMError("No AI provider configured. Add at least one API key in Settings → Keys.")
-    if all(_RATE_LIMIT.search(e) or "cooling down" in e for e in errors):
-        raise LLMBusy("All providers rate-limited — " + " | ".join(errors))
+    usable = [e for e in errors if "[key/billing]" not in e and not (_BROKEN.search(e) and not _RATE_LIMIT.search(e))]
+    if usable and all(_RATE_LIMIT.search(e) or "cooling down" in e for e in usable):
+        raise LLMBusy("All working providers are rate-limited — " + " | ".join(errors))
     raise LLMError("All providers failed — " + " | ".join(errors))
 
 
