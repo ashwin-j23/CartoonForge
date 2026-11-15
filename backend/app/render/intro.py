@@ -11,7 +11,7 @@ Storyboard
   7.3-8.0  a soft plum iris closes
 
 Kid-safe: no flashes (luminance changes are slow), no scary motion, bright but age-capped colour.
-`python -m app.render.intro OUT.mp4 [--name CartoonForge]` renders it; `layers()` exports the pieces for SVGator.
+`python -m app.render.intro OUT.mp4 [--name "Hoppy & Friends"]` renders it; `layers()` exports the pieces for SVGator.
 """
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def _letters(name: str, size: int):
 
 def frame(t: float, name: str, bg: Image.Image, letters, tag_img) -> Image.Image:
     f = bg.copy()
-    sets.overlay(f, "meadow", t)
+    sets.overlay(f, "meadow", t, avoid=(.06, .34))         # keep clouds clear of the channel name
     ground = H * .94
 
     # Sunny rises
@@ -219,7 +219,7 @@ def _tagline(text: str):
     return pill
 
 
-def render(out: Path, name: str = "CartoonForge", tagline: str = TAGLINE, log=print) -> Path:
+def render(out: Path, name: str = "Hoppy & Friends", tagline: str = TAGLINE, log=print) -> Path:
     from .styles import set_style
     set_style("classic")
     palette.set_current(PALETTE, "preschool")
@@ -250,7 +250,7 @@ def _b64(im: Image.Image, fmt="PNG") -> str:
     return f"data:image/{fmt.lower()};base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def layers(out: Path, name: str = "CartoonForge", tagline: str = TAGLINE, scale: float = .5) -> Path:
+def layers(out: Path, name: str = "Hoppy & Friends", tagline: str = TAGLINE, scale: float = .5) -> Path:
     """A layered SVG of the intro's final frame for SVGator: background, Sunny, each friend, Hoppy, each letter
     of the name, the tagline, sparkles — every piece its own named group, positioned where the video ends, so
     each can be keyframed in SVGator. Raster pieces are embedded PNGs; the canvas is 1920x1080 scaled by `scale`."""
@@ -306,7 +306,7 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
-    ap.add_argument("--name", default="CartoonForge")
+    ap.add_argument("--name", default="Hoppy & Friends")
     ap.add_argument("--tagline", default=TAGLINE)
     ap.add_argument("--svg", default="")
     a = ap.parse_args()

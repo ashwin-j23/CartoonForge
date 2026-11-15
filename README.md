@@ -1,4 +1,4 @@
-# CartoonForge — "Sunny Sprouts" kids channel on autopilot
+# CartoonForge — the "Hoppy & Friends" kids channel on autopilot ([@HoppyAndFriends](https://www.youtube.com/@HoppyAndFriends))
 
 The Reelsmith idea, rebuilt for children: an AI studio that plans, writes, voices, animates and publishes
 **10–15 minute educational kids' episodes to YouTube**. Every rule a child-development expert would apply is

@@ -246,6 +246,9 @@ export default function Settings() {
         <div className="set-body">
           <Section id="channel" title="Channel" icon="tv">
             <Field label="Channel name"><input value={d.channel_name || ''} onChange={ev('channel_name')} /></Field>
+            <Field label="YouTube handle" hint="Used for the subscribe link and hashtag in every description">
+              <input value={d.channel_handle || ''} onChange={ev('channel_handle')} placeholder="@HoppyAndFriends" />
+            </Field>
             <Field label="Tagline"><input value={d.channel_tagline || ''} onChange={ev('channel_tagline')} placeholder="Little lessons that grow big smiles" /></Field>
             <Field label="Main language">
               <select value={d.language || ''} onChange={ev('language')}>

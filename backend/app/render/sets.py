@@ -331,7 +331,8 @@ def _particles(kind: str, W: int, H: int):
     return []
 
 
-def overlay(frame: Image.Image, set_id: str, t: float):
+def overlay(frame: Image.Image, set_id: str, t: float, avoid: tuple[float, float] | None = None):
+    """Moving set particles. `avoid` = (top, bottom) as fractions of the height: no clouds there (e.g. a title)."""
     kind = (SETS.get(set_id) or {}).get("overlay")
     if not kind:
         return
@@ -340,6 +341,8 @@ def overlay(frame: Image.Image, set_id: str, t: float):
     for p in _particles(kind, W, H):
         if kind == "clouds":
             x0, y, s, v = p
+            if avoid and y < avoid[1] and y + s > avoid[0]:
+                continue
             x = ((x0 + t * v) % 1.3 - .15) * W
             ic = icon("cloud", int(s * H))
             frame.paste(ic, (int(x - ic.width / 2), int(y * H)), ic)

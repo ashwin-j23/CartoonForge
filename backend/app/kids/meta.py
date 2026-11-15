@@ -32,7 +32,7 @@ def chapters(timeline: list[dict]) -> str:
 def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> dict:
     cat = categories.get(script["category"])
     b = psychology.band(script["age_band"])
-    name = settings.get("channel_name", "Sunny Sprouts")
+    name = settings.get("channel_name", "Hoppy & Friends")
     style = (settings.get("_variant") or {}).get("title", "search")
     style_rule = {
         "search": "START with a high-search phrase parents type",
@@ -71,11 +71,13 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
         parts_src = [credit(src), ""]
     else:
         parts_src = []
-    cast_line = "Meet the friends: Sunny ☀️ Pip 🐧 Mimi 🐰 Bo 🦕 Zuzu 🦊 and Nana Owl 🦉"
+    cast_line = "Meet the friends: Hoppy 🐸 Sunny ☀️ Pip 🐧 Mimi 🐰 Bo 🦕 Zuzu 🦊 and Nana Owl 🦉"
+    handle = (settings.get("channel_handle") or "").strip()
+    sub_link = f" 👉 youtube.com/{handle}?sub_confirmation=1" if handle.startswith("@") else ""
     parts = [meta.get("hook", ""), ""]
     if settings.get("growth_cta", True):
-        parts += [f"👉 Grown-ups: subscribe to {name} for a new episode every week — songs, stories and learning "
-                  "your child will ask for again and again!", ""]
+        parts += [f"👉 Grown-ups: subscribe to {name} for new episodes every day — songs, stories and learning "
+                  f"your child will ask for again and again!{sub_link}", ""]
     if goals:
         parts += ["In this episode your child will:"] + [f"• {g}" for g in goals] + [""]
     ch = chapters(timeline or [])
@@ -86,7 +88,7 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
               "feelings and the whole wide world. Made with child-development principles: gentle pace, real pauses "
               "for your child to answer, movement breaks and a calm goodbye.",
               "", "For grown-ups: watch together when you can and ask your child what they learned!",
-              "", "#kidslearning #preschool #" + re.sub(r"[^A-Za-z0-9]", "", cat["name"].split("&")[0]).lower()]
+              "", (f"#{handle[1:]} " if handle.startswith("@") else "") + "#kidslearning #preschool #" + re.sub(r"[^A-Za-z0-9]", "", cat["name"].split("&")[0]).lower()]
     meta["description"] = "\n".join(parts)[:4900]
     meta["tags"] = list(dict.fromkeys(str(t)[:30] for t in meta.get("tags", [])))[:15]
     meta["category_id"] = cat["yt"]

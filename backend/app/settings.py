@@ -9,7 +9,8 @@ from . import config
 from .db import get_db
 
 DEFAULTS: dict = {
-    "channel_name": "Sunny Sprouts",
+    "channel_name": "Hoppy & Friends",
+    "channel_handle": "@HoppyAndFriends",  # youtube.com/@HoppyAndFriends (used in descriptions)
     "channel_tagline": "Songs, stories and smiles for curious little minds",
     "language": "en",                     # main episode language (ISO 639-1)
     "timezone": "UTC",

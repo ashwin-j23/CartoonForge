@@ -42,7 +42,7 @@ class Timeline:
         self.outro = audio["outro_start"]
         self.starts = [s["start"] for s in self.scenes]
         self.seg_starts = [s["start"] for s in self.segments]
-        self.channel = settings.get("channel_name", "Sunny Sprouts")
+        self.channel = settings.get("channel_name", "Hoppy & Friends")
         self.cta = settings.get("cta_line", "") if settings.get("growth_cta", True) else ""
         band = script.get("age_band", "preschool")
         self.captions_all = settings.get("captions_burned", True) and band in ("early", "big")
@@ -748,7 +748,7 @@ def _render(tl: Timeline, t: float) -> Image.Image:
     # intro: logo + Sunny + episode title
     if t < tl.jingle - 0.5 or not tl.scenes:
         f = sets.background("storybook" if tl.storybook else "meadow", W, H, tl.vivid).copy()
-        sets.overlay(f, "meadow", t)
+        sets.overlay(f, "meadow", t, avoid=(.02, .24))      # clouds stay clear of the channel name
         sp = sprite("sunny", int(H * .42), 1 if int(t * 4) % 2 else 2, "open", "excited", "down").rotate(math.sin(t * 3) * 6)
         f.paste(sp, (int(W / 2 - sp.width / 2), int(H * .52 - sp.height / 2 + math.sin(t * 5) * H * .01)), sp)
         # the star hops in beside Sunny for the theme
@@ -773,7 +773,7 @@ def _render(tl: Timeline, t: float) -> Image.Image:
     if t >= tl.outro:
         lt = t - tl.outro
         f = sets.background("meadow", W, H, tl.vivid).copy()
-        sets.overlay(f, "meadow", t)
+        sets.overlay(f, "meadow", t, avoid=(.02, .37))      # ...and of the subscribe pill
         for i, cid in enumerate(["pip", "mimi", castmod.STAR, "bo", "zuzu", "nana"]):      # the star in the middle
             x = W * (.1 + i * .16)
             _place(f, cid, x, H * .92, t, H, speaking=False, mouth=0, emotion="happy",

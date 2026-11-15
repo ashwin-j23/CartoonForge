@@ -69,7 +69,7 @@ export default function Home() {
       <section className="home-hero">
         <div className="home-hero-text">
           <div className="eyebrow"><Icon name="sun" size={14} />{greeting()}</div>
-          <h1>{s?.channel_name || 'Sunny Sprouts'} Studio</h1>
+          <h1>{s?.channel_name || 'Hoppy & Friends'} Studio</h1>
           <p className="sub">
             {s ? <>Ages <b>{s.age_band}</b> · <b>{s.target_minutes}</b>-minute episodes · {s.autopilot ? 'Autopilot publishes episodes that clear the bar' : 'Every episode waits for your review'}</> : <Skeleton h={16} w={320} />}
           </p>
