@@ -21,10 +21,14 @@ export function KindBadge({ kind }) {
 const epTitle = (ep) => ep.title || ep.topic || `Episode #${ep.id}`
 
 /** Compact card for pipeline board columns */
-export function MiniCard({ ep, catEmoji, bar }) {
+const LIVE = ['writing', 'rendering', 'publishing']
+
+export function MiniCard({ ep, catEmoji, bar, onRetry, retrying }) {
   const p = ep.progress
+  const failed = ['failed', 'rejected'].includes(ep.status)
+  const renderFail = /^render/i.test(ep.error || '')
   return (
-    <Link to={`/episodes/${ep.id}`} className="mini-card">
+    <Link to={`/episodes/${ep.id}`} className={`mini-card ${failed ? 'is-failed' : ''}`}>
       <div className="mini-thumb">
         <Thumb ep={ep} emoji={catEmoji} />
         {ep.duration ? <span className="dur">{fmtDur(ep.duration)}</span> : null}
@@ -38,8 +42,16 @@ export function MiniCard({ ep, catEmoji, bar }) {
             ? <span className="muted tiny"><Icon name="calendar" size={12} /> {fmtDate(ep.publish_at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
             : <span className="muted tiny">{ago(ep.created_at)}</span>}
         </div>
-        {p && p.pct != null && p.pct < 100 && <Progress pct={p.pct} label={p.stage} tone={ep.status === 'rendering' ? 'violet' : 'blue'} />}
-        {ep.status === 'failed' && ep.error && <div className="mini-err" title={ep.error}>{ep.error}</div>}
+        {LIVE.includes(ep.status) && p && p.pct != null && p.pct < 100
+          && <Progress pct={p.pct} label={p.stage} tone={ep.status === 'rendering' ? 'violet' : 'blue'} />}
+        {ep.status === 'planned' && <span className="mini-queued"><Icon name="clock" size={12} />Queued</span>}
+        {failed && ep.error && <div className="mini-err" title={ep.error}>{ep.error}</div>}
+        {failed && onRetry && (
+          <button className="btn sm mini-retry" disabled={retrying}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRetry(ep, renderFail ? 'render' : 'rewrite') }}>
+            <Icon name="refresh" size={13} />{renderFail ? 'Render again' : 'Rewrite'}
+          </button>
+        )}
       </div>
     </Link>
   )

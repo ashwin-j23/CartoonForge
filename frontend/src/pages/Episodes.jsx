@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { post } from '../api'
 import { EpisodeCard, KindBadge, MiniCard, Thumb } from '../components/EpisodeCard'
 import Icon from '../components/icons'
 import { AnimationBadge, StyleBadge, useStyles } from '../components/looks'
 import {
-  ago, Empty, fmtDur, isLive, PageHead, ScoreBadge, Seg, Skeleton, SkeletonCards, STATUS, STATUS_ORDER, StatusPill, useApi, useCategoryMap,
+  ago, Empty, fmtDur, isLive, PageHead, ScoreBadge, Seg, Skeleton, SkeletonCards, STATUS, STATUS_ORDER, StatusPill, useAction, useApi, useCategoryMap,
 } from '../components/ui'
 
 const BOARD = [
@@ -23,7 +24,8 @@ export default function Episodes() {
   const kind = params.get('kind') || ''
   const view = params.get('view') || (status ? 'grid' : 'board')
   const [q, setQ] = useState('')
-  const { data, loading } = useApi('/episodes', { ms: (d) => (Array.isArray(d) && d.some(isLive) ? 5000 : 30000) })
+  const [busy, run] = useAction()
+  const { data, loading, reload } = useApi('/episodes', { ms: (d) => (Array.isArray(d) && d.some(isLive) ? 5000 : 30000) })
   const [, catMap] = useCategoryMap()
   const bar = useApi('/settings', { quiet: true }).data?.quality_bar
   const { map: styleMap } = useStyles()
@@ -45,9 +47,14 @@ export default function Episodes() {
   const reviewQ = !status ? base.filter((e) => e.status === 'review') : []
   const rest = !status ? base.filter((e) => e.status !== 'review') : list
   const total = Object.values(counts).reduce((a, b) => a + b, 0)
+  const retry = async (ep, how) => {
+    const r = await run(`retry-${ep.id}`, () => post(`/episodes/${ep.id}/${how}`),
+      how === 'render' ? 'Rendering again' : 'Writing it again')
+    if (r) reload()
+  }
 
   return (
-    <div className="page">
+    <div className={`page ${view === 'board' ? 'wide' : ''}`}>
       <PageHead title="Episodes" sub="Everything the studio has written, rendered or published. Review queue first.">
         <Link to="/create" className="btn primary"><Icon name="plus" size={16} />New episode</Link>
       </PageHead>
@@ -84,11 +91,14 @@ export default function Episodes() {
           {BOARD.map(([title, sts, tone]) => {
             const items = base.filter((e) => sts.includes(e.status))
             return (
-              <div className={`col t-${tone}`} key={title}>
+              <div className={`col t-${tone} ${items.length ? '' : 'is-empty'}`} key={title}>
                 <div className="col-head"><span className="col-dot" />{title}<span className="col-count">{items.length}</span></div>
                 <div className="col-body">
                   {items.length === 0 && <div className="col-empty">Nothing here</div>}
-                  {items.slice(0, title === 'Published' ? 12 : 50).map((e) => <MiniCard key={e.id} ep={e} catEmoji={catMap[e.category]?.emoji} bar={bar} />)}
+                  {items.slice(0, title === 'Published' ? 12 : 50).map((e) => (
+                    <MiniCard key={e.id} ep={e} catEmoji={catMap[e.category]?.emoji} bar={bar}
+                      onRetry={title === 'Failed' ? retry : undefined} retrying={busy === `retry-${e.id}`} />
+                  ))}
                   {title === 'Published' && items.length > 12 && <button className="col-more" onClick={() => setParams({ view: 'grid', status: 'published' })}>+{items.length - 12} more</button>}
                 </div>
               </div>
