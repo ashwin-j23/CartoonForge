@@ -114,12 +114,17 @@ def check_security(for_web: bool = True) -> list[str]:
 
 
 PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", "").rstrip("/")
+if ON_VERCEL and (not PUBLIC_BASE_URL or "localhost" in PUBLIC_BASE_URL or "127.0.0.1" in PUBLIC_BASE_URL):
+    # Vercel provides the production domain itself (System Environment Variables)
+    PUBLIC_BASE_URL = env("VERCEL_PROJECT_PRODUCTION_URL") or PUBLIC_BASE_URL
 if PUBLIC_BASE_URL and not PUBLIC_BASE_URL.startswith("http"):
     PUBLIC_BASE_URL = "https://" + PUBLIC_BASE_URL
 
-# inline -> render inside the web process; github -> dispatch the GitHub Actions render farm
-WORKER_MODE = env("WORKER_MODE", "github" if ON_VERCEL else "inline")
-GITHUB_REPO = re.sub(r"^(https?://)?(www\.)?github\.com/", "", env("GITHUB_REPO", "")).strip("/").removesuffix(".git")
+# inline -> render inside the web process; github -> dispatch the GitHub Actions render farm.
+# Vercel stops functions after minutes and has no ffmpeg, so it always uses the GitHub render farm.
+WORKER_MODE = "github" if ON_VERCEL else env("WORKER_MODE", "inline")
+_vercel_repo = "/".join(filter(None, (env("VERCEL_GIT_REPO_OWNER"), env("VERCEL_GIT_REPO_SLUG")))) if ON_VERCEL else ""
+GITHUB_REPO = re.sub(r"^(https?://)?(www\.)?github\.com/", "", env("GITHUB_REPO", "") or _vercel_repo).strip("/").removesuffix(".git")
 GITHUB_TOKEN = env("GITHUB_TOKEN", "")
 GITHUB_WORKFLOW = env("GITHUB_WORKFLOW", "worker.yml")
 GITHUB_REF = env("GITHUB_REF_NAME", "main")
