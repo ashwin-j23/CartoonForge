@@ -4,6 +4,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+# never read the real .env: tests must not reach your Supabase database, AI keys or YouTube channel
+os.environ["CARTOONFORGE_NO_DOTENV"] = "1"
+for _k in ("SUPABASE_URL", "SUPABASE_SERVICE_KEY", "GITHUB_TOKEN", "YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN"):
+    os.environ.pop(_k, None)
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="cartoonforge-test-"))
 os.environ.setdefault("TTS_ENGINE", "espeak")
 os.environ.setdefault("KOKORO_ENABLED", "0")

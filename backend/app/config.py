@@ -14,7 +14,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_dotenv() -> None:
-    """Read KEY=value lines from .env (project root, then backend/). Real environment variables always win."""
+    """Read KEY=value lines from .env (project root, then backend/). Real environment variables always win.
+    CARTOONFORGE_NO_DOTENV=1 skips it (tests: never touch the real database, keys or YouTube)."""
+    if os.getenv("CARTOONFORGE_NO_DOTENV") == "1":
+        return
     for f in (ROOT.parent / ".env", ROOT / ".env"):
         if not f.is_file():
             continue
