@@ -1,0 +1,30 @@
+# Render (Docker web service with a persistent disk). Renders run inside the server (WORKER_MODE=inline)
+# on a paid instance, or on GitHub Actions for free (WORKER_MODE=github + GITHUB_REPO/GITHUB_TOKEN).
+services:
+  - type: web
+    name: cartoonforge
+    runtime: docker
+    plan: starter
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: ENV
+        value: production
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: WORKER_MODE
+        value: github
+      - key: GITHUB_REPO
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false

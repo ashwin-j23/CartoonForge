@@ -1,0 +1,61 @@
+# ---- secrets: never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+client_secret*.json
+credentials*.json
+token*.json
+service-account*.json
+secrets/
+
+# ---- runtime data (SQLite DB with encrypted keys, OAuth tokens, rendered media)
+backend/data/
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# ---- big downloads (Blender etc. — fetched locally, see docs)
+backend/tools/
+
+# ---- media outputs
+*.mp4
+*.mov
+*.webm
+*.wav
+*.mp3
+
+# ---- python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- node / frontend build
+node_modules/
+frontend/dist/
+.vite/
+
+# ---- editors / tools / local agent settings
+.claude
+.idea
+.vscode
+.mcp.json
+.vercel/
+*.log
+.DS_Store
+.gitconfig
+.gitmodules
+.bashrc
+.bash_profile
+.profile
+.zprofile
+.zshrc
+.ripgreprc

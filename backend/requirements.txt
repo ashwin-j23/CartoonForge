@@ -1,0 +1,14 @@
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+pydantic==2.14.3
+PyJWT==2.15.1
+numpy==2.5.4
+pillow==13.0.0
+cryptography==50.0.2
+edge-tts==7.3.1
+espeakng-loader>=0.2.4
+kokoro-onnx>=0.4.7
+onnxruntime==1.31.1
+tzdata
+pytest>=8.0

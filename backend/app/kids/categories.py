@@ -1,0 +1,131 @@
+"""Content categories — every kind of child, every kind of day.
+
+Each category has its own segment blueprint (the order of activities). Every blueprint mixes modes — learn,
+play, sing, move, story — because switching activity every 1.5-3 minutes resets attention without fast cutting.
+yt: YouTube category id (27 Education, 1 Film & Animation, 10 Music).
+"""
+from __future__ import annotations
+
+# segment kinds understood by the writer + renderer
+SEGMENT_KINDS = {
+    "hello": "Theme jingle + Sunny's hello ritual + what we'll do today (30-40 s)",
+    "learn": "Teach one idea with on-screen cards, wonder question first, questions with pauses",
+    "game": "Guessing / quiz game: question, pause, celebrate the answer (3-5 rounds)",
+    "song": "Sing-along song: short lines, repeated chorus, the key words of the episode",
+    "movement": "Stand-up-and-move break acting out the theme (hop, stretch, count jumps)",
+    "story": "A short story with a gentle problem, feelings, and a kind solution",
+    "explore": "Zuzu visits a place / culture / habitat and discovers 3 things",
+    "feelings": "A character has a big feeling; name it, calm down together, solve it",
+    "calm": "Slow breathing / quiet moment",
+    "recap": "What did we learn? Quick recap with the key words and cards again",
+    "goodbye": "Goodbye ritual: praise effort, gentle wind-down, see you next time",
+}
+
+BASE = ["hello", "learn", "game", "song", "learn", "movement", "story", "recap", "goodbye"]
+
+CATEGORIES: list[dict] = [
+    {"id": "numbers", "name": "Numbers & Counting", "emoji": "🔢", "bands": ["toddler", "preschool", "early"],
+     "mood": "playful", "sets": ["meadow", "farm", "beach"], "yt": "27", "lead": "pip",
+     "blueprint": BASE, "cards": ["count", "number"],
+     "topics": ["Counting 1 to 10 with fruit", "Counting to 20 at the farm", "Count the ducks in the pond",
+                "Bigger and smaller numbers", "Counting by twos with socks", "Adding one more", "Taking one away",
+                "Counting stars at night", "Number 0 — what is nothing?", "Counting legs on animals"]},
+    {"id": "abc", "name": "ABC & Phonics", "emoji": "🔤", "bands": ["toddler", "preschool", "early"],
+     "mood": "teacher", "sets": ["classroom", "meadow", "garden"], "yt": "27", "lead": "mimi",
+     "blueprint": BASE, "cards": ["letter", "word"],
+     "topics": ["Letters A to E", "Letters F to J", "Letters K to O", "Letters P to T", "Letters U to Z",
+                "The sound of B: bouncing balls", "Rhyming words: cat, hat, bat", "Vowels sing a song",
+                "First sight words: the, and, is", "Letter S slithers like a snake"]},
+    {"id": "colors_shapes", "name": "Colours & Shapes", "emoji": "🎨", "bands": ["toddler", "preschool"],
+     "mood": "playful", "sets": ["garden", "classroom", "playground"], "yt": "27", "lead": "mimi",
+     "blueprint": BASE, "cards": ["color", "shape"],
+     "topics": ["Rainbow colours", "Mixing colours: red and yellow make orange", "Circles everywhere",
+                "Triangles and squares", "Colours of fruit", "Shapes in the house", "Light and dark colours",
+                "Star and heart shapes"]},
+    {"id": "animals", "name": "Animals & Nature", "emoji": "🐘", "bands": ["toddler", "preschool", "early"],
+     "mood": "excited", "sets": ["jungle", "farm", "ocean", "forest", "snow", "savanna"], "yt": "27", "lead": "zuzu",
+     "blueprint": ["hello", "explore", "game", "song", "learn", "movement", "explore", "recap", "goodbye"],
+     "cards": ["fact", "count"],
+     "topics": ["Farm animal sounds", "Animals of the ocean", "Baby animals and their mums", "Animals in the snow",
+                "Animals of the African savanna", "Who lives in the rainforest?", "Bugs in the garden",
+                "Birds and their nests", "Animals that sleep in winter", "Night animals"]},
+    {"id": "stories", "name": "Stories & Fables", "emoji": "📖", "bands": ["preschool", "early", "big"],
+     "mood": "story", "sets": ["forest", "village", "meadow"], "yt": "1", "lead": "nana",
+     "blueprint": ["hello", "story", "game", "song", "story", "feelings", "recap", "goodbye"], "cards": ["word", "fact"],
+     "topics": ["The Tortoise and the Hare (Aesop)", "The Lion and the Mouse (Aesop)",
+                "The Monkey and the Crocodile (Panchatantra)", "Anansi and the Pot of Wisdom (West Africa)",
+                "The Ant and the Grasshopper (Aesop)", "The Elephant and the Ants (Jataka)",
+                "Stone Soup (European folk tale)", "The Crow and the Pitcher (Aesop)",
+                "The Rabbit in the Moon (Asian folk tale)", "The Little Red Hen (folk tale)"]},
+    {"id": "books", "name": "Storybook Classics", "emoji": "📚", "bands": ["preschool", "early", "big"],
+     "mood": "story", "sets": ["storybook", "forest", "village", "meadow"], "yt": "1", "lead": "nana",
+     "blueprint": ["hello", "story", "game", "story", "song", "story", "feelings", "recap", "goodbye"],
+     "cards": ["page", "word", "fact"],
+     "topics": ["The Tortoise and the Hare", "The Ugly Duckling", "How the Elephant Got His Trunk", "Momotaro, the Peach Boy",
+                "The Tale of Peter Rabbit", "Anansi and the Pot of Wisdom", "The Velveteen Rabbit", "The Little Red Hen"]},
+    {"id": "bedtime", "name": "Bedtime & Calm", "emoji": "🌙", "bands": ["toddler", "preschool", "early"],
+     "mood": "bedtime", "sets": ["night", "bedroom"], "yt": "1", "lead": "nana",
+     "blueprint": ["hello", "calm", "story", "song", "calm", "story", "goodbye"], "cards": ["word"],
+     "topics": ["Goodnight to the animals", "The sleepy moon", "Counting sheep softly", "A calm breathing journey",
+                "The little star who couldn't sleep", "Goodnight, world: kids around the world go to bed"]},
+    {"id": "science", "name": "Science & Wonder", "emoji": "🔬", "bands": ["preschool", "early", "big"],
+     "mood": "excited", "sets": ["lab", "garden", "sky"], "yt": "27", "lead": "pip",
+     "blueprint": BASE, "cards": ["fact", "word"],
+     "topics": ["Why is the sky blue?", "Where does rain come from?", "How do plants grow?", "Float or sink?",
+                "Why do we have day and night?", "What are magnets?", "How do our bodies move?",
+                "Hot and cold", "Why do leaves change colour?", "Rainbows: light makes colours"]},
+    {"id": "space", "name": "Space & Planets", "emoji": "🚀", "bands": ["preschool", "early", "big"],
+     "mood": "excited", "sets": ["space", "night"], "yt": "27", "lead": "pip",
+     "blueprint": BASE, "cards": ["fact", "count"],
+     "topics": ["The eight planets", "Our Moon", "The Sun is a star", "Astronauts in space", "Why do stars twinkle?",
+                "Mars, the red planet", "Saturn's rings"]},
+    {"id": "dinosaurs", "name": "Dinosaurs", "emoji": "🦕", "bands": ["preschool", "early"],
+     "mood": "excited", "sets": ["jungle", "volcano_valley"], "yt": "27", "lead": "bo",
+     "blueprint": BASE, "cards": ["fact", "count"],
+     "topics": ["Big and small dinosaurs", "Dinosaurs with horns and plates", "Flying reptiles and sea reptiles",
+                "Dinosaur eggs and babies", "What did dinosaurs eat?", "How do we know about dinosaurs? Fossils!"]},
+    {"id": "vehicles", "name": "Vehicles & How Things Work", "emoji": "🚒", "bands": ["toddler", "preschool", "early"],
+     "mood": "playful", "sets": ["city", "road"], "yt": "27", "lead": "pip",
+     "blueprint": BASE, "cards": ["fact", "count"],
+     "topics": ["Helpers on wheels: fire truck, ambulance, police car", "Things that fly", "Boats and ships",
+                "Trains go choo choo", "Diggers and builders", "Bicycles and helmets"]},
+    {"id": "habits", "name": "Healthy Habits & Routines", "emoji": "🪥", "bands": ["toddler", "preschool"],
+     "mood": "playful", "sets": ["bedroom", "kitchen", "garden"], "yt": "27", "lead": "bo",
+     "blueprint": ["hello", "learn", "song", "game", "movement", "feelings", "recap", "goodbye"], "cards": ["word", "count"],
+     "topics": ["Brushing our teeth", "Washing our hands", "Eating a rainbow of food", "Getting dressed",
+                "Tidy up time", "Drinking water", "Morning routine", "Bath time"]},
+    {"id": "feelings", "name": "Feelings & Friendship", "emoji": "💛", "bands": ["toddler", "preschool", "early"],
+     "mood": "story", "sets": ["playground", "meadow", "village"], "yt": "27", "lead": "mimi",
+     "blueprint": ["hello", "feelings", "song", "story", "calm", "game", "recap", "goodbye"], "cards": ["word"],
+     "topics": ["When I feel angry", "Sharing is caring", "Saying sorry", "Feeling shy", "Being a good friend",
+                "It's okay to make mistakes", "Taking turns", "Feeling brave", "Being kind to everyone"]},
+    {"id": "world", "name": "Around the World", "emoji": "🌍", "bands": ["preschool", "early", "big"],
+     "mood": "excited", "sets": ["world_map", "village", "city", "beach", "snow"], "yt": "27", "lead": "zuzu",
+     "blueprint": ["hello", "explore", "game", "song", "explore", "movement", "explore", "recap", "goodbye"],
+     "cards": ["fact", "word"],
+     "topics": ["Saying hello in 10 languages", "Breakfasts around the world", "Homes around the world",
+                "The seven continents", "Festivals of light around the world", "Games kids play around the world",
+                "Music and dances around the world", "Where does our food grow?"]},
+    {"id": "music_move", "name": "Music & Movement", "emoji": "🎵", "bands": ["toddler", "preschool"],
+     "mood": "playful", "sets": ["stage", "meadow"], "yt": "10", "lead": "mimi",
+     "blueprint": ["hello", "song", "movement", "song", "game", "song", "movement", "calm", "goodbye"],
+     "cards": ["word", "count"],
+     "topics": ["Head, shoulders, knees and toes", "Animal dance party", "Freeze dance", "Clap the rhythm",
+                "Fast and slow", "Loud and quiet", "Musical instruments of the world"]},
+    {"id": "puzzles", "name": "Riddles & Brain Games", "emoji": "🧩", "bands": ["early", "big"],
+     "mood": "playful", "sets": ["classroom", "lab", "playground"], "yt": "27", "lead": "pip",
+     "blueprint": ["hello", "game", "learn", "game", "song", "game", "movement", "game", "recap", "goodbye"],
+     "cards": ["question", "count", "shape"],
+     "topics": ["What am I? Animal riddles", "Spot the pattern", "Which one is different?", "Memory game",
+                "Opposites game", "Guess the sound", "Shadow matching"]},
+]
+
+BY_ID = {c["id"]: c for c in CATEGORIES}
+
+
+def get(cid: str) -> dict:
+    return BY_ID.get(cid) or BY_ID["numbers"]
+
+
+def for_band(band_id: str) -> list[dict]:
+    return [c for c in CATEGORIES if band_id in c["bands"]]
