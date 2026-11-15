@@ -159,6 +159,32 @@ class LocalDB(BaseDB):
         return rows[:limit]
 
 
+# Real columns of each Supabase table (docs/supabase.sql; tests/test_supabase_db.py keeps them in sync).
+# Any other field is stored in the table's `extra` jsonb column and merged back on read, so new fields
+# never need a schema migration.
+COLUMNS: dict[str, frozenset[str]] = {
+    "episodes": frozenset(('id', 'created_at', 'updated_at', 'kind', 'status', 'category', 'topic', 'age_band', 'language', 'minutes', 'duration', 'variant', 'why', 'angle', 'source', 'editions', 'progress', 'error', 'script', 'critic', 'safety', 'meta', 'video_url', 'thumb_url', 'timeline', 'song_regions', 'qa', 'engines', 'rendered_at', 'publish_at', 'published_at', 'youtube', 'stats', 'parent_id', 'edition_of', 'art_style', 'animation', 'ai_budget_usd', 'ai_video', 'rendered_style')),
+    "events": frozenset(('id', 'created_at', 'updated_at', 'level', 'msg', 'episode_id')),
+    "settings": frozenset(('id', 'created_at', 'updated_at', 'value')),
+    "topics": frozenset(('id', 'created_at', 'updated_at', 'topic', 'category', 'episode_id')),
+    "trends": frozenset(('id', 'created_at', 'updated_at', 'topic', 'category', 'age_band', 'score', 'used', 'why', 'angle', 'episode_id')),
+    "characters": frozenset(('id', 'created_at', 'updated_at', 'tier', 'name', 'kind', 'species', 'gender', 'age', 'colors', 'outfit', 'skin', 'hair', 'hair_color', 'personality', 'look', 'catchphrase', 'voice', 'pitch', 'origin', 'episodes')),
+}
+
+
+def _split(table: str, row: dict) -> tuple[dict, dict]:
+    cols = COLUMNS.get(table)
+    if cols is None:
+        return dict(row), {}
+    return {k: v for k, v in row.items() if k in cols}, {k: v for k, v in row.items() if k not in cols}
+
+
+def _flatten(row: dict) -> dict:
+    row = dict(row)
+    extra = row.pop("extra", None) or {}
+    return {**extra, **row} if isinstance(extra, dict) else row
+
+
 class SupabaseDB(BaseDB):
     kind = "supabase"
 
@@ -172,24 +198,44 @@ class SupabaseDB(BaseDB):
 
     def _check(self, r: httpx.Response):
         if r.status_code >= 400:
+            if "PGRST205" in r.text or "PGRST204" in r.text:
+                raise RuntimeError("Supabase is missing CartoonForge's tables or columns: open Supabase → SQL Editor, "
+                                   "paste docs/supabase.sql from the repo and click Run (safe to run again). "
+                                   f"Details: {r.text[:200]}")
             raise RuntimeError(f"Supabase {r.status_code}: {r.text[:300]}")
         return r.json() if r.content else []
+
+    def _rows(self, r: httpx.Response) -> list[dict]:
+        return [_flatten(x) for x in self._check(r)]
+
+    def _body(self, table: str, row: dict, old_extra: dict | None = None) -> dict:
+        cols, extra = _split(table, row)
+        if table in COLUMNS and (extra or old_extra):
+            cols["extra"] = {**(old_extra or {}), **extra}
+        return cols
 
     def insert(self, table, row):
         row = dict(row)
         row.setdefault("id", new_id())
-        out = self._check(self.client.post(f"{self.base}/{table}", json=row))
+        out = self._rows(self.client.post(f"{self.base}/{table}", json=self._body(table, row)))
         return out[0] if out else row
 
     def get(self, table, id):
-        out = self._check(self.client.get(f"{self.base}/{table}", params={"id": f"eq.{id}"}))
+        out = self._rows(self.client.get(f"{self.base}/{table}", params={"id": f"eq.{id}"}))
         return out[0] if out else None
 
     def update(self, table, id, patch):
         patch = dict(patch)
         if table in ("episodes", "topics"):
             patch["updated_at"] = now_iso()
-        out = self._check(self.client.patch(f"{self.base}/{table}", params={"id": f"eq.{id}"}, json=patch))
+        old_extra = None
+        if _split(table, patch)[1]:                          # extra fields: merge with what is stored
+            cur = self._check(self.client.get(f"{self.base}/{table}", params={"id": f"eq.{id}", "select": "extra"}))
+            if not cur:
+                raise KeyError(f"{table}/{id} not found")
+            old_extra = cur[0].get("extra") or {}
+        out = self._rows(self.client.patch(f"{self.base}/{table}", params={"id": f"eq.{id}"},
+                                           json=self._body(table, patch, old_extra)))
         if not out:
             raise KeyError(f"{table}/{id} not found")
         return out[0]
@@ -200,7 +246,12 @@ class SupabaseDB(BaseDB):
     def claim(self, table, id, from_status, patch):
         patch = {**patch, "updated_at": now_iso()}
         params = {"id": f"eq.{id}", "status": "in.(" + ",".join(from_status) + ")"}
-        out = self._check(self.client.patch(f"{self.base}/{table}", params=params, json=patch))
+        old_extra = None
+        if _split(table, patch)[1]:
+            cur = self._check(self.client.get(f"{self.base}/{table}", params={"id": f"eq.{id}", "select": "extra"}))
+            old_extra = (cur[0].get("extra") or {}) if cur else {}
+        out = self._rows(self.client.patch(f"{self.base}/{table}", params=params,
+                                           json=self._body(table, patch, old_extra)))
         return out[0] if out else None
 
     def query(self, table, eq=None, in_=None, lte=None, gte=None,
@@ -216,7 +267,7 @@ class SupabaseDB(BaseDB):
             params.append((k, f"gte.{v}"))
         params.append(("order", f"{order}.{'desc' if desc else 'asc'}.nullslast"))
         params.append(("limit", str(limit)))
-        return self._check(self.client.get(f"{self.base}/{table}", params=params))
+        return self._rows(self.client.get(f"{self.base}/{table}", params=params))
 
 
 _db: BaseDB | None = None

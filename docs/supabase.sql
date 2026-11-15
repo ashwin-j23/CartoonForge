@@ -2,6 +2,8 @@
 -- The app talks to these tables with the service key (server and GitHub worker only; never the browser),
 -- so Row Level Security is enabled with no public policies.
 -- Timestamps are ISO strings written by the app (text sorts correctly for ISO-8601 UTC).
+-- Every table has an `extra` jsonb column: fields without their own column are kept there by the app.
+-- Safe to run again: it only adds what is missing.
 
 create table if not exists episodes (
   id text primary key,
@@ -114,6 +116,13 @@ create table if not exists characters (
   origin jsonb,
   episodes jsonb default '[]'::jsonb
 );
+
+alter table episodes add column if not exists extra jsonb default '{}'::jsonb;
+alter table events add column if not exists extra jsonb default '{}'::jsonb;
+alter table settings add column if not exists extra jsonb default '{}'::jsonb;
+alter table topics add column if not exists extra jsonb default '{}'::jsonb;
+alter table trends add column if not exists extra jsonb default '{}'::jsonb;
+alter table characters add column if not exists extra jsonb default '{}'::jsonb;
 
 alter table episodes enable row level security;
 alter table events enable row level security;

@@ -85,7 +85,13 @@ def login(body: dict, request: Request):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "db": get_db().kind}
+    db = get_db()
+    try:
+        db.get_setting("app")                            # a real read: catches missing tables / bad keys
+    except Exception as e:  # noqa: BLE001
+        return Response(content=__import__("json").dumps({"ok": False, "db": db.kind, "error": str(e)[:400]}),
+                        status_code=503, media_type="application/json")
+    return {"ok": True, "db": db.kind}
 
 
 @app.get("/api/me", dependencies=[Depends(auth)])
