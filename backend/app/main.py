@@ -944,7 +944,20 @@ def cron_tick(request: Request):
 
 
 # ---------------------------------------------------------------- YouTube OAuth
-_states: dict[str, float] = {}
+def _oauth_state() -> str:
+    """Signed, self-contained OAuth state: works when the callback lands on another serverless instance."""
+    body = f"{int(time.time())}.{secrets.token_urlsafe(12)}"
+    sig = hmac.new(config.SECRET_KEY.encode(), body.encode(), "sha256").hexdigest()[:32]
+    return f"{body}.{sig}"
+
+
+def _state_ok(state: str, max_age: int = 900) -> bool:
+    try:
+        ts, nonce, sig = state.split(".")
+        good = hmac.new(config.SECRET_KEY.encode(), f"{ts}.{nonce}".encode(), "sha256").hexdigest()[:32]
+        return hmac.compare_digest(sig, good) and 0 <= time.time() - int(ts) <= max_age
+    except (ValueError, TypeError):
+        return False
 
 
 def _redirect_uri(request: Request) -> str:
@@ -958,16 +971,14 @@ def yt_connect(request: Request):
     from .settings import secret
     if not (secret("YT_CLIENT_ID") and secret("YT_CLIENT_SECRET")):
         raise HTTPException(400, "Add YT_CLIENT_ID and YT_CLIENT_SECRET in Settings → Keys first")
-    st = secrets.token_urlsafe(24)
-    _states[st] = time.time()
-    return {"url": youtube.auth_url(_redirect_uri(request), st)}
+    return {"url": youtube.auth_url(_redirect_uri(request), _oauth_state())}
 
 
 @app.get("/api/youtube/callback")
 def yt_callback(request: Request, code: str = "", state: str = "", error: str = ""):
     from .publish import youtube
-    if error or not code or time.time() - _states.pop(state, 0) > 900:
-        return RedirectResponse(f"/#/channel?yt=error&error={error or 'expired'}")
+    if error or not code or not _state_ok(state):
+        return RedirectResponse(f"/#/channel?yt=error&error={error or 'expired - press Connect again'}")
     try:
         youtube.exchange_code(code, _redirect_uri(request))
         get_db().set_setting("channel_cache", None)
