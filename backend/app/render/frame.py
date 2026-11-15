@@ -390,22 +390,22 @@ def _iris(frame: Image.Image, k: float):
 
 
 def _logo(frame, name, t, W, H, y):
-    letters = list(name)
-    size = int(H * .12)
-    imgs = [text_img(ch, size, fill=palette.accent(i), stroke=(255, 255, 255), stroke_w=.12) if ch != " " else None
-            for i, ch in enumerate(letters)]
-    total = sum((im.width if im else size * .35) for im in imgs)
+    from .branding import brand_letters                    # the channel's logo letters (banner, intro, episodes)
+    size = int(H * .105)
+    imgs = brand_letters(name, size)
+    gap, track = size * .25, -size * .08
+    total = sum((im.width + track if im else gap) for im in imgs) - track
     x = W / 2 - total / 2
     for i, im in enumerate(imgs):
         if im is None:
-            x += size * .35
+            x += gap
             continue
         k = ease_out_back((t - .15 - i * .06) / .5)
         if k > .02:
             bob = math.sin(t * 4 + i * .7) * H * .008
             ii = im if k > .99 else im.resize((max(1, int(im.width * k)), max(1, int(im.height * k))))
             frame.paste(ii, (int(x + im.width / 2 - ii.width / 2), int(y - ii.height / 2 + bob)), ii)
-        x += im.width
+        x += im.width + track
 
 
 # ---------------------------------------------------------------- the frame

@@ -73,8 +73,8 @@ def _sparkle(size, col):
 
 
 def _letters(name: str, size: int):
-    return [(text_img(ch, size, fill=palette.accent(i), stroke=(255, 255, 255), stroke_w=.14) if ch != " " else None)
-            for i, ch in enumerate(name)]
+    from .branding import brand_letters                    # same logo letters as the banner
+    return list(brand_letters(name, int(size * .9)))
 
 
 def frame(t: float, name: str, bg: Image.Image, letters, tag_img) -> Image.Image:
