@@ -29,8 +29,10 @@ from .kids import cast, categories, growth, languages, planner, psychology
 from .settings import DEFAULTS, app_settings, import_env_secrets, save_app_settings, save_secrets, secrets_status
 
 probs = config.check_security(for_web=True)
-if probs and config.IS_PROD:
+if probs and config.IS_PROD and not config.ON_VERCEL:
     raise SystemExit("Refusing to start:\n  - " + "\n  - ".join(probs))
+# On Vercel a crash only shows FUNCTION_INVOCATION_FAILED: answer every request with what is missing instead
+SETUP_PROBLEMS = probs if (probs and config.ON_VERCEL) else []
 
 @asynccontextmanager
 async def lifespan(_app):
@@ -39,6 +41,14 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="CartoonForge", docs_url=None, redoc_url=None, lifespan=lifespan)
+if SETUP_PROBLEMS:
+    from fastapi.responses import JSONResponse
+
+    @app.middleware("http")
+    async def _setup_needed(request: Request, call_next):
+        return JSONResponse({"detail": "Setup needed: add these in Vercel → Settings → Environment Variables, then "
+                                       "redeploy. " + " ".join(SETUP_PROBLEMS), "setup": SETUP_PROBLEMS}, 503)
+
 if config.CORS_ORIGINS:
     app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
