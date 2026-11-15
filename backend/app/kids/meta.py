@@ -32,7 +32,7 @@ def chapters(timeline: list[dict]) -> str:
 def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> dict:
     cat = categories.get(script["category"])
     b = psychology.band(script["age_band"])
-    name = settings.get("channel_name", "Hoppy & Friends")
+    name = settings.get("channel_name", "Hoppy Hop Hop")
     style = (settings.get("_variant") or {}).get("title", "search")
     style_rule = {
         "search": "START with a high-search phrase parents type",

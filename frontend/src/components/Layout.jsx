@@ -42,7 +42,7 @@ export default function Layout({ theme, setTheme, onLogout }) {
   }, [open])
 
   const review = ov?.counts?.review || 0
-  const name = ov?.settings_summary?.channel_name || 'Hoppy & Friends'
+  const name = ov?.settings_summary?.channel_name || 'Hoppy Hop Hop'
   const w = ov?.worker
 
   return (

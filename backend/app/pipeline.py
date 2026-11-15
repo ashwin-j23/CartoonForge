@@ -473,7 +473,7 @@ def make_compilation(minutes: int | None = None) -> dict:
         files = [storage.fetch(e["video_url"]) for e in picked]
         out = epr.compile_videos(files, work / "compilation.mp4")
         url = storage.put(out, f"compilations/{out.parent.name}.mp4", "video/mp4")
-        name = s.get("channel_name", "Hoppy & Friends")
+        name = s.get("channel_name", "Hoppy Hop Hop")
         rows, t = [], 0.0
         for e in picked:
             rows.append(f"{int(t) // 60}:{int(t) % 60:02d} {(e.get('meta') or {}).get('title', e['topic'])[:60]}")

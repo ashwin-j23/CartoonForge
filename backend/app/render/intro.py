@@ -11,7 +11,7 @@ Storyboard
   7.3-8.0  a soft plum iris closes
 
 Kid-safe: no flashes (luminance changes are slow), no scary motion, bright but age-capped colour.
-`python -m app.render.intro OUT.mp4 [--name "Hoppy & Friends"]` renders it; `layers()` exports the pieces for SVGator.
+`python -m app.render.intro OUT.mp4 [--name "Hoppy Hop Hop"]` renders it; `layers()` exports the pieces for SVGator.
 """
 from __future__ import annotations
 
@@ -33,6 +33,8 @@ from .common import OUT, ease_in_out, ease_out, ease_out_back, rounded, text_img
 W, H, FPS, DUR = 1920, 1080, 24, 8.0
 FRIENDS = [("pip", .1, 2.55), ("mimi", .23, 2.75), ("bo", .68, 2.95), ("zuzu", .8, 3.15), ("nana", .915, 3.35)]
 TAGLINE = "Songs, stories & smiles!"
+SONG_AT = .48                     # the jingle starts here: its beats are at .6, 1.1, 1.6 ("Hop-py! Hop! Hop!")
+SONG_HOPS = (3.1, 3.6)            # ...and the second "Hop! Hop!" (2.6 = "Hop-py")
 PALETTE = "rainbow_playground"
 
 
@@ -108,15 +110,19 @@ def frame(t: float, name: str, bg: Image.Image, letters, tag_img) -> Image.Image
         f.paste(sh, (int(x - sh.width / 2), int(ground - sh.height / 2)), sh)
         f.paste(img, (int(x - img.width / 2), int(ground - img.height + bob)), img)
 
-    # Hoppy hops in from the right, three hops, lands in the middle; a happy hop later
-    pos, hop, ph = _hop(t, 1.1, 2.6, 3)
-    if t >= 1.1:
+    # Hoppy hops in on the song: lands on "Hop!" (1.1 s) and "Hop!" (1.6 s), reaches the middle at 2.1 s,
+    # then two little hops in place on the second "Hop! Hop!" (3.1 s, 3.6 s), and a happy hop at the end
+    pos, hop, ph = _hop(t, .6, 2.1, 3)
+    if t >= .6:
         x = W * (1.15 - .65 * pos)
         lift = hop * H * .16
+        for land in SONG_HOPS:
+            if land - .25 <= t <= land:
+                lift = math.sin((t - land + .25) / .25 * math.pi) * H * .07
         if 6.3 <= t <= 6.9:                                     # the happy hop
             q = (t - 6.3) / .6
             lift = math.sin(q * math.pi) * H * .12
-        squash = (ph < .1 or ph > .9) and t < 2.6
+        squash = ((ph < .1 or ph > .9) and t < 2.1) or any(0 <= t - land < .08 for land in SONG_HOPS)
         emo = "excited" if t > 4.8 or hop > .2 else "happy"
         arms = "up" if hop > .3 or 6.3 <= t <= 6.9 else ("wave" if t > 5.4 and int(t * 2.4) % 2 else "down")
         sp = sprite("hoppy", int(H * .4), 2 if 6.3 <= t <= 6.9 or 4.9 < t < 5.3 else 0,
@@ -190,10 +196,8 @@ def soundtrack(name: str, out: Path) -> Path:
     th = music.theme(name)
     if th.ndim == 1:
         th = np.stack([th, th], 1)
-    add(th, .35, .9)
-    add(music.sfx("whoosh"), .35, .8)
-    for k in range(3):
-        add(music.sfx("boing", k), 1.1 + k * .5 + .45, .7, .3)
+    add(th, SONG_AT, .95)
+    add(music.sfx("whoosh"), .1, .6)
     for i, (_, _, t0) in enumerate(FRIENDS):
         add(music.sfx("pop", i), t0 + .05, .8, -.6 + i * .3)
     for i in range(0, len(name), 2):
@@ -219,7 +223,7 @@ def _tagline(text: str):
     return pill
 
 
-def render(out: Path, name: str = "Hoppy & Friends", tagline: str = TAGLINE, log=print) -> Path:
+def render(out: Path, name: str = "Hoppy Hop Hop", tagline: str = TAGLINE, log=print) -> Path:
     from .styles import set_style
     set_style("classic")
     palette.set_current(PALETTE, "preschool")
@@ -250,7 +254,7 @@ def _b64(im: Image.Image, fmt="PNG") -> str:
     return f"data:image/{fmt.lower()};base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def layers(out: Path, name: str = "Hoppy & Friends", tagline: str = TAGLINE, scale: float = .5) -> Path:
+def layers(out: Path, name: str = "Hoppy Hop Hop", tagline: str = TAGLINE, scale: float = .5) -> Path:
     """A layered SVG of the intro's final frame for SVGator: background, Sunny, each friend, Hoppy, each letter
     of the name, the tagline, sparkles — every piece its own named group, positioned where the video ends, so
     each can be keyframed in SVGator. Raster pieces are embedded PNGs; the canvas is 1920x1080 scaled by `scale`."""
@@ -306,7 +310,7 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
-    ap.add_argument("--name", default="Hoppy & Friends")
+    ap.add_argument("--name", default="Hoppy Hop Hop")
     ap.add_argument("--tagline", default=TAGLINE)
     ap.add_argument("--svg", default="")
     a = ap.parse_args()

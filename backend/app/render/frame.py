@@ -42,7 +42,7 @@ class Timeline:
         self.outro = audio["outro_start"]
         self.starts = [s["start"] for s in self.scenes]
         self.seg_starts = [s["start"] for s in self.segments]
-        self.channel = settings.get("channel_name", "Hoppy & Friends")
+        self.channel = settings.get("channel_name", "Hoppy Hop Hop")
         self.cta = settings.get("cta_line", "") if settings.get("growth_cta", True) else ""
         band = script.get("age_band", "preschool")
         self.captions_all = settings.get("captions_burned", True) and band in ("early", "big")

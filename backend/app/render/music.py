@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import random
+import re
 from functools import lru_cache
 
 import numpy as np
@@ -273,33 +274,101 @@ def bed(mood: str, seed: str, seconds: float, tempo: float = 1.0) -> np.ndarray:
     return x[: int(seconds * SR)]
 
 
-def theme(channel: str, slow: bool = False) -> np.ndarray:
-    """The channel's jingle: 2 bars, always the same notes (seeded by the channel name)."""
-    rnd = _rng("theme:" + channel)
-    bpm = 96 if slow else 128
+_word_cache: dict[tuple, np.ndarray | None] = {}
+
+
+def _vowel_at(a: np.ndarray) -> float:
+    """Seconds from the start of a sung word to its loud vowel (what the ear hears as 'on the beat')."""
+    hop = 220
+    env = np.array([np.abs(a[i:i + hop]).mean() for i in range(0, max(1, len(a) - hop), hop)])
+    if not len(env):
+        return 0.0
+    return float(np.argmax(env >= .5 * env.max()) * hop / SR)
+
+
+def _sung(word: str, voice: str, semis: float) -> np.ndarray | None:
+    """One chanted word in a character voice, pitched up `semis` semitones (kid-like). None if no TTS here."""
+    key = (word, voice, round(semis, 2))
+    if key not in _word_cache:
+        a = None
+        try:
+            from .. import tts
+            try:
+                a, _ = tts._kokoro_tts(word, voice, "+0%", "excited")
+            except Exception:  # noqa: BLE001  (no Kokoro: try eSpeak, else instruments only)
+                a, _ = tts._espeak_tts(word, voice, "+0%", "excited")
+            a = np.asarray(a, np.float32)
+            nz = np.where(np.abs(a) > .02 * (np.max(np.abs(a)) or 1))[0]
+            if len(nz):
+                a = a[max(0, nz[0] - 200):nz[-1] + 400]           # trim silence: the word lands on the beat
+            r = 2 ** (semis / 12)                                 # resample = pitch up (and a touch shorter)
+            a = np.interp(np.arange(0, len(a) - 1, r), np.arange(len(a)), a).astype(np.float32)
+            a /= max(1e-6, float(np.max(np.abs(a))))
+        except Exception:  # noqa: BLE001
+            a = None
+        _word_cache[key] = a
+    return _word_cache[key]
+
+
+def _hook_words(channel: str) -> list[str]:
+    """The sung hook = the channel name, word by word ('Hoppy Hop Hop' -> Hoppy / Hop / Hop!)."""
+    words = [w for w in re.findall(r"[A-Za-z']+", channel)][:4] or ["Hello"]
+    words[-1] += "!"
+    return words
+
+
+def theme(channel: str, slow: bool = False, voices: bool = True) -> np.ndarray:
+    """The channel's jingle: a sing-along hook on the channel name.
+
+    'Hop-py! Hop! Hop!' on a rising call (sol-sol, do, mi) with a boing on every 'Hop', then the same call a
+    step higher with a second voice joining (a little kids' chorus), clap-clap, and a sparkle. Always the same
+    notes, so it becomes the channel's signature sound. Original melody (no borrowed tunes)."""
+    bpm = 92 if slow else 120
     beat = 60 / bpm
-    bus = Bus(8 * beat + 3.0)
-    root = 60
-    mid = [4, 7, 12, 9, 7, 4]
-    rnd.shuffle(mid)
-    notes = [0] + mid + [7]
+    lead = .12                                                    # room for the first word's soft 'H'
+    bus = Bus(lead + 8 * beat + 3.0)
+    root = 60                                                     # C
+    words = _hook_words(channel)
+    calls = [[7, 12, 16, 19][: len(words)], [9, 14, 17, 21][: len(words)]]   # rising call, then a step higher
+    beats = [0, 1, 2, 2.5][: len(words)]
     nrnd = np.random.default_rng(3)
-    for i, n in enumerate(notes):
-        bus.add(marimba(hz(root + 12 + n), .6), i * beat, .5, .25)
-        bus.add(epiano(hz(root + n), .9, .8), i * beat, .3, -.2)
-        bus.add(glock(hz(root + 24 + n), .9, .5), i * beat, .12, .5)
-    for i, deg in enumerate([0, 7]):
+    for phrase, notes in enumerate(calls):
+        b0 = phrase * 4
+        for w, (b, n) in enumerate(zip(beats, notes)):
+            at = lead + (b0 + b) * beat
+            long = w == len(words) - 1
+            if w == 0 and len(words[0]) > 3:                      # 'Hop-py': two eighths on the same note
+                for k in range(2):
+                    bus.add(marimba(hz(root + 12 + n), .35), at + k * beat / 2, .45, .2)
+            else:
+                bus.add(marimba(hz(root + 12 + n), .6 if long else .4), at, .5, .2)
+            bus.add(epiano(hz(root + n), 1.2 if long else .7, .8), at, .3, -.2)
+            bus.add(glock(hz(root + 24 + n), .9, .5), at, .1, .5)
+            if w > 0:
+                bus.add(sfx("boing", phrase * 4 + w), at, .32, .3 - w * .2)
+            if voices:
+                for v, (voice, semis, gain, pan) in enumerate([("am_puck*0.5+am_liam*0.5", 5.0, .95, -.1),
+                                                                ("af_sky", 3.0, .6, .25)]):
+                    if v == 1 and phrase == 0:
+                        continue                                  # the friend joins the second time
+                    a = _sung(words[w], voice, semis + (2 if phrase else 0))
+                    if a is not None:
+                        bus.add(a, max(0.0, at - _vowel_at(a)), gain * (.85 if slow else 1), pan)
+    for i, deg in enumerate([0, 5]):                              # I ... IV (bright, lifts into the answer)
         ch = _chord(root, deg)
-        bus.add(pad_voice([hz(m) for m in ch], beat * 4.3, 1.0), i * beat * 4, .6, -.6)
-        bus.add(pad_voice([hz(m) for m in ch], beat * 4.3, 1.004), i * beat * 4, .6, .6)
-        bus.add(bass(hz(ch[0] - 12), beat * 4), i * beat * 4, .75, 0)
+        bus.add(pad_voice([hz(m) for m in ch], beat * 4.3, 1.0), lead + i * beat * 4, .5, -.6)
+        bus.add(pad_voice([hz(m) for m in ch], beat * 4.3, 1.004), lead + i * beat * 4, .5, .6)
+        bus.add(bass(hz(ch[0] - 12), beat * 4), lead + i * beat * 4, .75, 0)
     if not slow:
         for k in range(8):
-            bus.add(kick() if k % 2 == 0 else clap(nrnd), k * beat, .6, 0)
-            bus.add(hat(nrnd), k * beat + beat / 2, .8, .4)
+            if k % 2 == 0:
+                bus.add(kick(), lead + k * beat, .6, 0)
+            bus.add(hat(nrnd), lead + k * beat + beat / 2, .7, .4)
+        for b in (3, 3.5, 7, 7.5):                                # clap-clap kids can copy
+            bus.add(clap(nrnd), lead + b * beat, .7, 0)
     for j, n in enumerate([24, 28, 31, 36]):
-        bus.add(glock(hz(root + n), 1.2), 8 * beat - .05 + j * .07, .3, -.5 + j * .33)
-    out = reverb_stereo(bus.l, bus.r, wet=.25, seconds=1.8)
+        bus.add(glock(hz(root + n), 1.2), lead + 8 * beat - .05 + j * .07, .3, -.5 + j * .33)
+    out = reverb_stereo(bus.l, bus.r, wet=.22, seconds=1.6)
     peak = float(np.max(np.abs(out)) or 1)
     return (out / peak * .85).astype(np.float32)
 
