@@ -68,6 +68,8 @@ DEFAULTS: dict = {
     "growth_cta": True,                   # one parent-directed subscribe line at the end + description + end card
     "cta_line": "Grown-ups, tap subscribe so we can play again soon!",
     "shorts_from_episodes": True,         # every episode's song becomes a vertical Short (discovery)
+    "book_series": False,                 # automatic book series: next story of a book each day (app/kids/series.py)
+    "book_series_per_day": 1,             # how many of the daily episodes come from the book series
     "compilation_weekly": True,           # weekly long compilation of the best episodes (watch time)
     "compilation_minutes": 45,
     "compilation_weekday": 5,             # 5 = Saturday (weekend family viewing)                  # 0.667 = 1280x720 render (2.2x faster)

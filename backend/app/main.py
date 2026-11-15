@@ -601,6 +601,60 @@ def books_stories(gid: int):
     return {"book": b, "stories": [{k: v for k, v in st.items() if k != "text"} for st in items]}
 
 
+@app.get("/api/books/series", dependencies=[Depends(auth)])
+def book_series_status():
+    from .kids import series
+    return series.status()
+
+
+@app.put("/api/books/series", dependencies=[Depends(auth)])
+def book_series_update(body: dict):
+    from .kids import series
+    patch = {}
+    if "enabled" in body:
+        patch["book_series"] = bool(body["enabled"])
+    if "per_day" in body:
+        try:
+            patch["book_series_per_day"] = max(1, min(10, int(body["per_day"])))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "per_day must be a number") from None
+    if patch:
+        save_app_settings(patch)
+    try:
+        if body.get("gid"):
+            series.choose(int(body["gid"]), int(body.get("start", 0)))
+        elif patch.get("book_series") and not series.status()["book"]:
+            series._ensure_book({})                      # first switch-on: pick the first shelf book now
+    except ValueError as ex:
+        raise HTTPException(400, str(ex)) from None
+    except httpx.HTTPError as ex:
+        raise HTTPException(502, f"Could not reach Project Gutenberg: {ex}") from None
+    if "enabled" in body:
+        get_db().log("Book series " + ("ON: the next story of the book becomes an episode each day"
+                                       if body["enabled"] else "OFF"))
+    return series.status()
+
+
+@app.post("/api/books/series/skip", dependencies=[Depends(auth)])
+def book_series_skip(body: dict | None = None):
+    from .kids import series
+    try:
+        series.skip(int((body or {}).get("n", 1)))
+    except ValueError as ex:
+        raise HTTPException(400, str(ex)) from None
+    return series.status()
+
+
+@app.post("/api/books/series/restart", dependencies=[Depends(auth)])
+def book_series_restart():
+    from .kids import series
+    try:
+        series.restart()
+    except ValueError as ex:
+        raise HTTPException(400, str(ex)) from None
+    return series.status()
+
+
 @app.get("/api/optimizer", dependencies=[Depends(auth)])
 def get_optimizer():
     from .kids import optimizer

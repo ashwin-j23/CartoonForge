@@ -1,6 +1,7 @@
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
-import { post } from '../api'
+import { post, put } from '../api'
 import BookBrowser from '../components/BookBrowser'
+import BookSeriesCard from '../components/BookSeriesCard'
 import Icon from '../components/icons'
 import { Badge, Empty, fmtDate, fmtNum, PageHead, Skeleton, Spinner, Tabs, useAction, useApi, useCategoryMap } from '../components/ui'
 
@@ -108,8 +109,15 @@ function Trends() {
 
 function Books() {
   const nav = useNavigate()
+  const { data: series, setData: setSeries } = useApi('/books/series', { ms: 30000, quiet: true })
+  const [busy, run] = useAction()
+  const useBook = async (b) => {
+    const r = await run(`use-${b.id}`, () => put('/books/series', { gid: b.id }), `“${b.title}” is now the series book — story 1 next`)
+    if (r) { setSeries(r); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  }
   return (
     <>
+      <BookSeriesCard series={series} setSeries={setSeries} />
       <section className="feature-strip">
         {[['globe', 'Public domain', 'Books from Project Gutenberg that anyone may adapt.'],
           ['tag', 'Credited automatically', 'Title, author and source go in every description.'],
@@ -118,7 +126,13 @@ function Books() {
           <div key={t}><span className="fs-ico"><Icon name={i} size={16} /></span><p><b>{t}</b>{d}</p></div>
         ))}
       </section>
-      <BookBrowser renderAction={(s, b) => (
+      <BookBrowser headerAction={(b, stories) => (
+        series?.book?.gid === b.id
+          ? <Badge tone="green" icon="check">Series book · story {Math.min(series.next + 1, stories.length)} next</Badge>
+          : <button className="btn sm" disabled={busy === `use-${b.id}`} onClick={() => useBook(b)}>
+              {busy === `use-${b.id}` ? <Spinner size={14} /> : <Icon name="bookOpen" size={14} />}Use for series ({stories.length} stories)
+            </button>
+      )} renderAction={(s, b) => (
         <button className="btn primary sm" onClick={() => nav(`/create?${new URLSearchParams({ book: b.id, index: s.index, story: s.title || `Story ${s.index + 1}`, bookTitle: b.title })}`)}>
           <Icon name="film" size={14} />Animate this story
         </button>

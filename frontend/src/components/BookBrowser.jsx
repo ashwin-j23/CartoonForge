@@ -28,7 +28,7 @@ function BookCard({ b, active, onOpen }) {
 }
 
 /** Story list of one book. renderAction(story, book) returns the action node for each story. */
-export function Stories({ book, onClose, renderAction }) {
+export function Stories({ book, onClose, renderAction, headerAction }) {
   const toast = useToast()
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
@@ -51,7 +51,10 @@ export function Stories({ book, onClose, renderAction }) {
           <h2><Icon name="bookOpen" size={18} />{b.title}</h2>
           <span className="muted small">{(b.authors || []).join(', ')}{b.url && <> · <a href={b.url} target="_blank" rel="noreferrer">Project Gutenberg<Icon name="external" size={12} /></a></>}</span>
         </div>
-        {onClose && <button className="icon-btn" onClick={onClose} aria-label="Close book"><Icon name="x" /></button>}
+        <div className="row-gap">
+          {headerAction && data?.stories?.length > 0 && headerAction(b, data.stories)}
+          {onClose && <button className="icon-btn" onClick={onClose} aria-label="Close book"><Icon name="x" /></button>}
+        </div>
       </div>
       {err ? <Empty compact icon="cloud" title="Couldn’t open this book">{err}</Empty> : !data ? (
         <div className="book-loading"><span className="muted small"><Spinner size={14} /> Reading the book and finding its stories…</span><Skeleton h={58} count={3} r={10} style={{ marginTop: 8 }} /></div>
@@ -74,7 +77,7 @@ export function Stories({ book, onClose, renderAction }) {
 }
 
 /** Shelf + Gutenberg search + story list. */
-export default function BookBrowser({ renderAction, compact }) {
+export default function BookBrowser({ renderAction, headerAction, compact }) {
   const shelf = useApi('/books', { quiet: true })
   const toast = useToast()
   const [q, setQ] = useState('')
@@ -110,7 +113,7 @@ export default function BookBrowser({ renderAction, compact }) {
         {results && <button type="button" className="btn ghost" onClick={() => { setResults(null); setQ('') }}>Back to shelf</button>}
       </form>
 
-      {open && <div id="book-stories"><Stories book={open} onClose={() => setOpen(null)} renderAction={renderAction} /></div>}
+      {open && <div id="book-stories"><Stories book={open} onClose={() => setOpen(null)} renderAction={renderAction} headerAction={headerAction} /></div>}
 
       <section>
         <div className="section-title"><div><h2>{results ? `${results.length} result${results.length === 1 ? '' : 's'}` : 'Curated shelf'}</h2></div></div>

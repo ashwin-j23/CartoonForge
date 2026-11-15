@@ -60,7 +60,7 @@ def create(category: str | None = None, topic: str | None = None, age_band: str 
         "kind": "episode", "status": "planned", "category": plan["category"], "topic": plan["topic"],
         "age_band": plan["age_band"], "language": s.get("language", "en"),
         "minutes": float(minutes or var["minutes"] or s.get("target_minutes", 12)), "variant": var,
-        "why": (f"Book: {source['book']}" if source else plan.get("why")) or why, "source": source,
+        "why": ((why if why.startswith("Book series") else f"Book: {source['book']}") if source else plan.get("why")) or why, "source": source,
         "angle": plan.get("angle", ""),
         "art_style": art_style or s.get("art_style", "auto"), "animation": animation or s.get("animation", "code"),
         "palette": palette or s.get("palette", "auto"),
@@ -593,7 +593,18 @@ def _keep_full():
     want = int(s.get("episodes_per_day", 3)) * 2 + 1          # two days of episodes in the pipe
     if not has_ai():
         want = 1                      # without an AI writer every plan is the same demo: keep just one, don't churn
-    for _ in range(min(3, max(0, want - len(pending)))):        # at most 3 new plans per heartbeat
+    room = min(3, max(0, want - len(pending)))                 # at most 3 new plans per heartbeat
+    if room and s.get("book_series") and has_ai():
+        from .kids import series
+        book_want = min(want, int(s.get("book_series_per_day", 1)) * 2)
+        for _ in range(min(room, max(0, book_want - series.pending_count(pending)))):
+            try:
+                series.plan_one()
+                room -= 1
+            except Exception as e:  # noqa: BLE001  (Gutenberg unreachable etc.: plan a normal episode instead)
+                log(f"Book series: could not plan the next story ({e})", "warn")
+                break
+    for _ in range(room):
         create(why="Autopilot: keeping two days of episodes ready")
 
 
