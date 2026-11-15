@@ -47,7 +47,7 @@ search, with gutenberg.org's own catalogue as a fallback.
 
 ## Run locally
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt
+python3 -m venv .venv && .venv/bin/pip install -r backend/requirements-render.txt
 cd frontend && npm install && npm run build && cd ..
 cd backend && ../.venv/bin/uvicorn app.main:app --reload     # prints a generated password
 ../.venv/bin/python -m pytest -q                            # 21 tests incl. a real render (checks size + stereo)

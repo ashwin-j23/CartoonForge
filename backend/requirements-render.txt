@@ -1,0 +1,8 @@
+# Full studio: API + renderer + voices + tests. Used by the GitHub render worker, CI, Docker and local runs.
+-r requirements.txt
+uvicorn[standard]==0.54.0
+edge-tts==7.3.1
+espeakng-loader>=0.2.4
+kokoro-onnx>=0.4.7
+onnxruntime==1.31.1
+pytest>=8.0

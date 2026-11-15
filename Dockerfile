@@ -13,8 +13,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-noto-core \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY backend/requirements.txt backend/requirements.txt
-RUN pip install -r backend/requirements.txt
+COPY backend/requirements.txt backend/requirements-render.txt backend/
+RUN pip install -r backend/requirements-render.txt
 COPY backend/ backend/
 COPY --from=web /web/dist frontend/dist
 WORKDIR /app/backend
