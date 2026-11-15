@@ -1,9 +1,0 @@
-# Vercel (API function only). The full stack with voices and the renderer is backend/requirements.txt.
-fastapi==0.162.0
-httpx==0.28.1
-pydantic==2.14.3
-PyJWT==2.15.1
-numpy==2.5.4
-pillow==13.0.0
-cryptography==50.0.2
-tzdata

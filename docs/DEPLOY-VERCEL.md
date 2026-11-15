@@ -1,7 +1,9 @@
 # Deploying CartoonForge to Vercel (plan for later — today it runs on your PC)
 
 Nothing here changes how the app runs locally. These files only take effect on Vercel:
-`vercel.json`, `api/index.py`, root `requirements.txt`, `.vercelignore`, `docs/supabase.sql`.
+`vercel.json` (Vercel Services: `api` = FastAPI in `backend/`, `frontend` = the Vite dashboard), `.vercelignore`,
+`docs/supabase.sql`. On Vercel (`VERCEL` is set) the backend runs in production mode, without background threads,
+and sends rendering to the GitHub worker.
 
 ## Why the work is split in three
 Vercel functions stop after 60-300 seconds, have no ffmpeg and no lasting disk. A 12-minute episode needs
@@ -9,7 +11,7 @@ Vercel functions stop after 60-300 seconds, have no ffmpeg and no lasting disk. 
 
 | Part | Where | Cost |
 |---|---|---|
-| Dashboard (React) + API (FastAPI) | **Vercel** (static files + one Python function) | Hobby: free |
+| Dashboard (React) + API (FastAPI) | **Vercel** (two services: `frontend` static + `api` FastAPI) | Hobby: free |
 | Database + video storage | **Supabase** (Postgres + Storage bucket) | Free tier: 500 MB DB, 1 GB storage |
 | Writing, voices, rendering, AI animation, publishing | **GitHub Actions** (`.github/workflows/worker.yml`) | Free: 2,000 min/month on private repos, unlimited on public |
 
@@ -26,7 +28,9 @@ Vercel functions stop after 60-300 seconds, have no ffmpeg and no lasting disk. 
 2. **GitHub**: push this project to a repo. Repo → Settings → Secrets → Actions: `SUPABASE_URL`,
    `SUPABASE_SERVICE_KEY`, `SECRET_KEY` (48 random chars; the same value as on Vercel).
    Create a fine-grained token with *Actions: read & write* on that repo.
-3. **Vercel**: import the repo (framework preset: Other; the settings come from `vercel.json`). Environment variables:
+3. **Vercel**: import the repo, Root Directory `./`, preset **Services** (read from `vercel.json`):
+   `/api/*` and `/media/*` go to `api`, everything else to `frontend`. Set these environment variables
+   **before the first deploy** (the API refuses to start in production without them):
    ```
    ENV=production
    ADMIN_PASSWORD=<12+ chars>
@@ -34,7 +38,7 @@ Vercel functions stop after 60-300 seconds, have no ffmpeg and no lasting disk. 
    CRON_SECRET=<32 random chars>
    PUBLIC_BASE_URL=https://<your-project>.vercel.app
    SUPABASE_URL=...            SUPABASE_SERVICE_KEY=...      SUPABASE_BUCKET=episodes
-   WORKER_MODE=github          GITHUB_REPO=<you>/<repo>      GITHUB_TOKEN=<fine-grained token>
+   WORKER_MODE=github (default)  GITHUB_REPO=<you>/<repo>      GITHUB_TOKEN=<fine-grained token>
    ```
 4. Open the site, sign in, add keys in Settings → Keys (Gemini/Groq for writing; FAL_KEY / RUNWAY_API_KEY for AI
    animation; YouTube client ID + secret). Keys are stored encrypted in Supabase, so the GitHub worker reads them too.

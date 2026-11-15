@@ -72,8 +72,10 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
-IS_PROD = env("ENV") == "production" or bool(os.getenv("RENDER")) or bool(os.getenv("GITHUB_ACTIONS"))
-INTERNAL_SCHEDULER = env("INTERNAL_SCHEDULER", "1")
+ON_VERCEL = bool(os.getenv("VERCEL"))
+IS_PROD = env("ENV") == "production" or bool(os.getenv("RENDER")) or bool(os.getenv("GITHUB_ACTIONS")) or ON_VERCEL
+# serverless: no background threads (Vercel Cron calls /api/cron/tick); rendering goes to the GitHub render farm
+INTERNAL_SCHEDULER = env("INTERNAL_SCHEDULER", "0" if ON_VERCEL else "1")
 CORS_ORIGINS = [x.strip() for x in env("CORS_ORIGINS").split(",") if x.strip()]
 WEAK_VALUES = {"", "change-me", "admin", "password", "secret", "kids", "123456"}
 
@@ -111,7 +113,7 @@ if PUBLIC_BASE_URL and not PUBLIC_BASE_URL.startswith("http"):
     PUBLIC_BASE_URL = "https://" + PUBLIC_BASE_URL
 
 # inline -> render inside the web process; github -> dispatch the GitHub Actions render farm
-WORKER_MODE = env("WORKER_MODE", "inline")
+WORKER_MODE = env("WORKER_MODE", "github" if ON_VERCEL else "inline")
 GITHUB_REPO = re.sub(r"^(https?://)?(www\.)?github\.com/", "", env("GITHUB_REPO", "")).strip("/").removesuffix(".git")
 GITHUB_TOKEN = env("GITHUB_TOKEN", "")
 GITHUB_WORKFLOW = env("GITHUB_WORKFLOW", "worker.yml")
