@@ -27,6 +27,8 @@ def _load_dotenv() -> None:
                 continue
             k, v = line.split("=", 1)
             k, v = k.strip().removeprefix("export ").strip(), v.strip()
+            if v.startswith("#"):
+                v = ""                                       # empty value followed by a comment
             if " #" in v and not v.startswith(("'", '"')):
                 v = v.split(" #", 1)[0].strip()              # inline comment
             v = v.strip("'\"")
