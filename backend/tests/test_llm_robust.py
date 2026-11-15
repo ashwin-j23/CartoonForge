@@ -1,0 +1,52 @@
+"""AI replies in the wild: cut off by the token limit, bare lists, empty replies - the writer keeps going."""
+import json
+
+import pytest
+
+from app.llm import router
+
+
+def test_repair_truncated_keeps_complete_items():
+    cut = '{"scenes": [{"speaker": "hoppy", "text": "Look at my jar!"}, {"speaker": "pip", "text": "Is it emp'
+    assert router.repair_truncated(cut) == {"scenes": [{"speaker": "hoppy", "text": "Look at my jar!"}]}
+    esc = '{"scenes": [{"text": "He said \\"hi\\" [ok]"}, {"text": "cut'
+    assert router.repair_truncated(esc)["scenes"][0]["text"] == 'He said "hi" [ok]'
+    assert router.repair_truncated('```json\n[1, 2, 3]\n```') == [1, 2, 3]
+    with pytest.raises(ValueError):
+        router.repair_truncated('{"a": "never closes')
+
+
+def test_complete_json_salvages_then_retries_bigger(monkeypatch):
+    calls = []
+
+    def fake_complete(system, user, json_mode=False, **kw):
+        calls.append(kw)
+        if len(calls) == 1:
+            return '{"broken": ', "gemini"                      # nothing salvageable
+        return json.dumps({"ok": True}), kw.get("prefer") or "groq"
+    monkeypatch.setattr(router, "complete", fake_complete)
+    data, used = router.complete_json("s", "u", max_tokens=1000, prefer="gemini")
+    assert data == {"ok": True} and calls[1]["max_tokens"] == 1800 and calls[1]["prefer"] == "gemini"
+
+
+def test_empty_reply_moves_to_next_model(monkeypatch):
+    p = router.PROVIDERS["groq"]
+    monkeypatch.setattr(router, "secret", lambda k: "x" if k == p.key_env else "")
+    monkeypatch.setattr(router, "_budget_check", lambda: None)
+    router._cooldown.clear()
+    seen = []
+
+    def fake_call(prov, system, user, temperature, max_tokens, json_mode, model=None):
+        seen.append(model)
+        return "" if len(seen) == 1 else '{"ok": 1}'
+    monkeypatch.setattr(router, "_call", fake_call)
+    text, used = router.complete("s", "u", only=("groq",))
+    assert used == "groq" and text == '{"ok": 1}' and len(seen) == 2 and seen[0] != seen[1]
+
+
+def test_writer_accepts_bare_lists(monkeypatch):
+    from app.kids import writer
+    segs = [{"kind": "hello", "title": f"Part {i}", "set": "meadow", "minutes": 1, "beats": ["x"]} for i in range(6)]
+    monkeypatch.setattr(writer, "complete_json", lambda *a, **k: (segs, "gemini"))
+    plan = writer.outline(writer.categories.get("science"), "Sky", "preschool", 8, "en", None, "")
+    assert len(plan["segments"]) == 6

@@ -210,6 +210,10 @@ def complete(system: str, user, *, temperature: float = 0.9, max_tokens: int = 2
             for model in models:
                 try:
                     text = _call(p, system, user, temperature, max_tokens, json_mode, model)
+                    if not text.strip():                     # empty (e.g. all tokens spent thinking): next model
+                        st["last_error"] = f"{model}: empty response"
+                        text = None
+                        continue
                     break
                 except LLMError as e:
                     if _RATE_LIMIT.search(str(e)):
@@ -219,6 +223,8 @@ def complete(system: str, user, *, temperature: float = 0.9, max_tokens: int = 2
                         raise
                     st["last_error"] = f"{model}: {str(e)[:150]}"
             if text is None:
+                if st["last_error"] and "empty response" in st["last_error"] and not limited:
+                    raise LLMError("empty response from every model")
                 if limited or not models:
                     raise LLMError(f"429 rate limit on every model ({', '.join(limited) or 'all cooling down'}): "
                                    f"{(st['last_error'] or '')[:120]}")
@@ -292,16 +298,64 @@ def vision_json(system: str, text: str, images: list[bytes], **kw):
         return complete_json(system, text + "\n\n(The frames could not be shown; use the other details.)", **kw)
 
 
+def repair_truncated(text: str):
+    """Salvage a JSON reply cut off by the token limit: keep every complete item, close the brackets.
+    Returns the parsed value or raises ValueError."""
+    t = re.sub(r"^```(?:json)?\s*", "", text.strip())
+    start = min([i for i in (t.find("{"), t.find("[")) if i >= 0], default=-1)
+    if start < 0:
+        raise ValueError("no JSON")
+    stack, in_str, esc, last_ok = [], False, False, None
+    for i in range(start, len(t)):
+        c = t[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c in "{[":
+            stack.append("}" if c == "{" else "]")
+        elif c in "}]":
+            if not stack:
+                break
+            stack.pop()
+            if not stack:
+                return json.loads(t[start:i + 1])
+            last_ok = (i + 1, list(stack))                   # a value just closed: a safe cut point
+    if not last_ok:
+        raise ValueError("nothing complete to salvage")
+    cut, rest = last_ok
+    return json.loads(t[start:cut] + "".join(reversed(rest)))
+
+
 def complete_json(system: str, user, **kw):
-    """JSON completion with one repair retry on a different provider."""
+    """JSON completion. A reply cut off by the token limit is salvaged; otherwise it is asked again with more room,
+    then on another provider."""
     text, used = complete(system, user, json_mode=True, **kw)
     try:
         return extract_json(text), used
-    except Exception:
-        _cooldown[used] = time.time() + 30
-        _stats.setdefault(used, {"ok": 0, "fail": 0, "last_error": None})["last_error"] = \
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        data = repair_truncated(text)
+        if data:
+            return data, used
+    except (ValueError, json.JSONDecodeError):
+        pass
+    again = "\n\nReturn ONLY valid minified JSON. No prose. Keep it compact."
+    user2 = user + again if isinstance(user, str) else user + [{"type": "text", "text": again}]
+    kw2 = {**kw, "max_tokens": int(kw.get("max_tokens", 1500) * 1.8)}
+    text, used2 = complete(system, user2, json_mode=True, **{**kw2, "prefer": used})
+    try:
+        return extract_json(text), used2
+    except Exception:  # noqa: BLE001
+        _cooldown[used2] = time.time() + 30
+        _stats.setdefault(used2, {"ok": 0, "fail": 0, "last_error": None})["last_error"] = \
             f"reply was not valid JSON: {text[:100]!r}"
-        again = "\n\nReturn ONLY valid minified JSON. No prose."
-        user = user + again if isinstance(user, str) else user + [{"type": "text", "text": again}]
-        text, used = complete(system, user, json_mode=True, **kw)
-        return extract_json(text), used
+    text, used3 = complete(system, user2, json_mode=True, **{**kw2, "avoid": used2})
+    return extract_json(text), used3

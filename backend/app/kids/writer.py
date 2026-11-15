@@ -90,7 +90,12 @@ def outline(category: dict, topic: str, band_id: str, minutes: float, lang: str 
             f"Minutes must add up to about {minutes:.0f}. hello ≈ 0.6, goodbye ≈ 0.6, recap ≈ 1, songs ≈ 1.2-1.6, "
             f"others share the rest (each 1.5-{b['segment'] + 0.6:.1f}).")
     data, _ = complete_json(system, user, temperature=0.8, max_tokens=2500)
-    segs = data.get("segments") or []
+    if isinstance(data, list):                         # some models answer with the bare list
+        data = {"segments": data}
+    if not isinstance(data, dict):
+        raise ValueError("outline was not a JSON object")
+    segs = [s for s in data.get("segments") or [] if isinstance(s, dict)]
+    data["segments"] = segs
     if len(segs) < 5:
         raise ValueError("outline too short")
     for s in segs:
@@ -144,7 +149,8 @@ def write_segment(seg: dict, plan: dict, category: dict, band_id: str, prev_tail
             f"{SCENE_SPEC % (cast.SPEAKERS + [g['id'] for g in plan.get('characters') or []])}\n{CARD_SPEC}{', '.join(_objects())}\n\n"
             "Return JSON: {\"scenes\": [ ... ]}")
     data, _ = complete_json(system, user, temperature=0.85, max_tokens=4000)
-    return clean_scenes(data.get("scenes") or [], seg, category, {g["id"] for g in plan.get("characters") or []})
+    scenes = data if isinstance(data, list) else (data.get("scenes") or [] if isinstance(data, dict) else [])
+    return clean_scenes(scenes, seg, category, {g["id"] for g in plan.get("characters") or []})
 
 
 def clean_scenes(scenes: list, seg: dict, category: dict, guests: set | None = None) -> list[dict]:
