@@ -27,6 +27,8 @@ CARD_BG = (255, 253, 245)
 ACCENTS = [(255, 150, 60), (90, 150, 240), (240, 90, 120), (90, 190, 110), (160, 110, 220)]   # legacy; see palette.py
 
 
+FEEDBACK_CTA = "Grown-ups: tell us what you think! Link in the description"
+
 class Timeline:
     """Everything the compositor needs, picklable for the render workers."""
 
@@ -44,6 +46,8 @@ class Timeline:
         self.seg_starts = [s["start"] for s in self.segments]
         self.channel = settings.get("channel_name", "Hoppy Hop Hop")
         self.cta = settings.get("cta_line", "") if settings.get("growth_cta", True) else ""
+        # YouTube turns comments off on made-for-kids videos: the end card points grown-ups to the feedback form
+        self.fb_cta = (settings.get("feedback_cta_line") or FEEDBACK_CTA) if settings.get("feedback_cta", True) else ""
         band = script.get("age_band", "preschool")
         self.captions_all = settings.get("captions_burned", True) and band in ("early", "big")
         self.captions_song = settings.get("captions_burned", True)
@@ -785,7 +789,7 @@ def _render(tl: Timeline, t: float) -> Image.Image:
     if t >= tl.outro:
         lt = t - tl.outro
         f = sets.background("meadow", W, H, tl.vivid).copy()
-        sets.overlay(f, "meadow", t, avoid=(.02, .37))      # ...and of the subscribe pill
+        sets.overlay(f, "meadow", t, avoid=(.02, .5))       # ...and of the subscribe + feedback pills
         for i, cid in enumerate(["pip", "mimi", castmod.STAR, "bo", "zuzu", "nana"]):      # the star in the middle
             x = W * (.1 + i * .16)
             _place(f, cid, x, H * .92, t, H, speaking=False, mouth=0, emotion="happy",
@@ -803,6 +807,17 @@ def _render(tl: Timeline, t: float) -> Image.Image:
                 if k < .99:
                     pill = pill.resize((max(1, int(pill.width * k)), max(1, int(pill.height * k))))
                 f.paste(pill, (int(W / 2 - pill.width / 2), int(H * .3 - pill.height / 2)), pill)
+        if tl.fb_cta:
+            k = ease_out_back((lt - 3.0) / .5)
+            if k > .02:
+                ci = fit_text(tl.fb_cta, int(W * .66), int(H * .045), fill=(255, 255, 255), stroke=OUT)
+                pill = rounded(ci.width + int(H * .18), int(H * .085), int(H * .042), (78, 178, 84), outline=(255, 255, 255), width=4)
+                star = icon("star", int(H * .055))
+                pill.alpha_composite(star, (int(H * .028), (pill.height - star.height) // 2))
+                pill.alpha_composite(ci, (int(H * .11), (pill.height - ci.height) // 2))
+                if k < .99:
+                    pill = pill.resize((max(1, int(pill.width * k)), max(1, int(pill.height * k))))
+                f.paste(pill, (int(W / 2 - pill.width / 2), int(H * .425 - pill.height / 2)), pill)
         return f
 
     tq = _lookup_time(tl, t)                     # in a segment gap, past the iris midpoint, show the next segment

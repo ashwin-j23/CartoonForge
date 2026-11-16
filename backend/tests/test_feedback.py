@@ -71,3 +71,19 @@ def test_never_links_to_localhost_and_replaces_an_old_line(monkeypatch):
     assert "localhost" not in new and new.count("Grown-ups: how was this episode?") == 1
     save_app_settings({"site_url": ""})
     assert feedback.site_url() == "" and feedback.with_link("x", "e1") == "x"      # no public address: no link
+
+
+def test_end_card_asks_grown_ups_for_feedback():
+    from app.kids.writer import template_script
+    from app.render import frame as fr
+    from app.render.episode import estimate_audio
+    s = template_script("numbers", "Counting", "preschool", 3, seed=1)
+    snd = estimate_audio(s, 24)
+    on = fr.Timeline(s, snd, 320, 180, 24, {"pace": "calm", "art_style": "classic", "channel_name": "Hoppy Hop Hop"})
+    off = fr.Timeline(s, snd, 320, 180, 24, {"pace": "calm", "art_style": "classic", "channel_name": "Hoppy Hop Hop",
+                                             "feedback_cta": False})
+    assert on.fb_cta == fr.FEEDBACK_CTA and off.fb_cta == ""
+    import numpy as np
+    a = np.asarray(fr.render(on, on.outro + 4.5).convert("RGB")).astype(int)
+    b = np.asarray(fr.render(off, off.outro + 4.5).convert("RGB")).astype(int)
+    assert np.abs(a - b).mean() > 1                                   # the green pill is drawn
