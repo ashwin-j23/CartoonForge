@@ -50,3 +50,42 @@ def status() -> dict:
          "detail": f"{len(pub)}/10. YouTube needs a library to understand who to suggest you to."},
     ]
     return {"tips": tips, "shorts": shorts[:30], "compilations": comps[:20], "seo_keywords": SEO_KEYWORDS}
+
+
+# where most views come from -> the zone posting times follow (a representative city per country)
+COUNTRY_TZ = {
+    "US": "America/New_York", "CA": "America/Toronto", "MX": "America/Mexico_City", "BR": "America/Sao_Paulo",
+    "GB": "Europe/London", "IE": "Europe/Dublin", "DE": "Europe/Berlin", "FR": "Europe/Paris", "NL": "Europe/Amsterdam",
+    "IN": "Asia/Kolkata", "PK": "Asia/Karachi", "BD": "Asia/Dhaka", "AE": "Asia/Dubai", "SA": "Asia/Riyadh",
+    "PH": "Asia/Manila", "ID": "Asia/Jakarta", "MY": "Asia/Kuala_Lumpur", "SG": "Asia/Singapore", "TH": "Asia/Bangkok",
+    "AU": "Australia/Sydney", "NZ": "Pacific/Auckland", "NG": "Africa/Lagos", "ZA": "Africa/Johannesburg",
+    "KE": "Africa/Nairobi", "EG": "Africa/Cairo",
+}
+MIN_VIEWS = 300          # don't move the schedule on a handful of views
+MIN_SHARE = 0.35         # ...or when no country clearly leads
+
+
+def pick_timezone(views: dict) -> str | None:
+    """The zone of the country that clearly leads the views, or None (not enough data / no clear leader)."""
+    total = sum(views.values())
+    if total < MIN_VIEWS:
+        return None
+    top, n = max(views.items(), key=lambda kv: kv[1])
+    return COUNTRY_TZ.get(top) if n / total >= MIN_SHARE else None
+
+
+def tune_timezone() -> str:
+    """Daily: follow the audience. Posting times stay the same local hours (breakfast, late morning, after
+    school), just in the zone where most children actually watch."""
+    from ..publish import youtube
+    from ..settings import save_app_settings
+    s = app_settings()
+    if not s.get("auto_timezone", True):
+        return "off"
+    views = youtube.audience_countries()
+    tz = pick_timezone(views)
+    if not tz or tz == s.get("timezone"):
+        return f"kept {s.get('timezone')} ({sum(views.values())} views)"
+    save_app_settings({"timezone": tz})
+    get_db().log(f"Posting times moved to {tz}: most views now come from there", "info")
+    return f"moved to {tz}"

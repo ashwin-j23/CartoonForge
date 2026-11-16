@@ -314,7 +314,7 @@ def free_slots(n: int = 6) -> list[str]:
     days = set(s.get("post_days") or range(7))
     times = s.get("post_times") or [s.get("post_time") or "07:30"]
     times = sorted(times)[: max(1, int(s.get("episodes_per_day", len(times))))]
-    taken = {e.get("publish_at", "")[:16] for e in get_db().query("episodes", in_={"status": ["approved", "publishing"]})}
+    taken = {(e.get("publish_at") or "")[:16] for e in get_db().query("episodes", in_={"status": ["approved", "publishing"]})}
     out, now = [], datetime.now(tz)
     for i in range(0, 120):
         base = now + timedelta(days=i)
@@ -333,12 +333,25 @@ def free_slots(n: int = 6) -> list[str]:
     return out
 
 
+def slot_for(ep: dict) -> str:
+    """Next free slot; bedtime episodes take the day's last posting time (closest to bedtime)."""
+    slots = free_slots(9)
+    if ep.get("category") == "bedtime" or (ep.get("meta") or {}).get("mood") == "bedtime":
+        s = app_settings()
+        tz = ZoneInfo(s.get("timezone") or "UTC")
+        last = max(s.get("post_times") or ["16:00"])
+        late = [x for x in slots if datetime.fromisoformat(x).astimezone(tz).strftime("%H:%M") == last]
+        if late:
+            return late[0]
+    return slots[0]
+
+
 def approve(eid: str, publish_at: str | None) -> dict:
     db = get_db()
     ep = db.get("episodes", eid)
     if not ep or not ep.get("video_url"):
         raise ValueError("Episode has no rendered video yet")
-    when = publish_at or free_slots(1)[0]
+    when = publish_at or slot_for(ep)
     ep = db.update("episodes", eid, {"status": "approved", "publish_at": when})
     log(f"Approved — publishes {when}", ep=eid)
     return ep
@@ -363,13 +376,21 @@ def publish(eid: str, force: bool = False) -> dict:
         lang = ep.get("language", "en")
         rt = (s.get("edition_channels") or {}).get(lang, "") if lang != s.get("language", "en") else ""
         from .kids import feedback
+        privacy, when = s.get("youtube_privacy", "public"), None
+        slot = _parse(ep.get("publish_at"))
+        if privacy == "public" and slot and slot > datetime.now(timezone.utc) + timedelta(minutes=20):
+            # uploaded early as a scheduled video: YouTube itself makes it public exactly at the slot
+            privacy, when = "private", slot.isoformat(timespec="seconds").replace("+00:00", "Z")
         desc = meta.get("description", "") if ep.get("kind") == "short" else feedback.with_link(meta.get("description", ""), ep["id"])
         res = youtube.upload(local, meta.get("title", ep["topic"]), desc, meta.get("tags", []),
-                             s.get("youtube_privacy", "public"), thumb, lang.split("-")[0], meta.get("localizations"),
+                             privacy, thumb, lang.split("-")[0], meta.get("localizations"),
                              rt, meta.get("category_id", "27"), made_for_kids=True,
-                             synthetic=bool(s.get("ai_disclosure")), short=ep.get("kind") == "short")
-        ep = db.update("episodes", eid, {"status": "published", "youtube": res, "published_at": now_iso(), "error": None})
-        log(f"Published on YouTube: {res['url']}", ep=eid)
+                             synthetic=bool(s.get("ai_disclosure")), short=ep.get("kind") == "short", publish_at=when)
+        if when:
+            res = {**res, "privacy": "public", "scheduled_for": when}
+        ep = db.update("episodes", eid, {"status": "published", "youtube": res, "error": None,
+                                         "published_at": slot.isoformat(timespec="seconds") if when else now_iso()})
+        log(f"Uploaded; YouTube makes it public at {when}: {res['url']}" if when else f"Published on YouTube: {res['url']}", ep=eid)
         if s.get("series_playlists", True) and meta.get("playlist") and ep.get("kind") != "short":
             try:
                 pid = youtube.ensure_playlist(meta["playlist"], f"{meta['playlist']} — every episode in order.", rt)
@@ -391,21 +412,36 @@ def publish(eid: str, force: bool = False) -> dict:
             Path(local).unlink(missing_ok=True)
 
 
+PREUPLOAD_HOURS = 12      # upload this far ahead as a scheduled video, so it goes live on time whatever the runners do
+
+
+def _parse(iso: str | None) -> datetime | None:
+    try:
+        d = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
 def publish_due() -> list[str]:
     s = app_settings()
     if s.get("kill_switch"):
         return []
-    today = datetime.now(timezone.utc).date().isoformat()
-    done_today = [e for e in get_db().query("episodes", eq={"status": "published"}, limit=50)
-                  if (e.get("published_at") or "").startswith(today)]
-    room = int(s.get("max_posts_per_day", 2)) + 3 - len(done_today)      # shorts ride along (+3)
+    # daily cap per slot day (published_at holds the go-live time, so early uploads count for their own day)
+    per_day: dict[str, int] = {}
+    for e in get_db().query("episodes", eq={"status": "published"}, limit=100):
+        d = (e.get("published_at") or "")[:10]
+        per_day[d] = per_day.get(d, 0) + 1
+    cap = int(s.get("max_posts_per_day", 2)) + 3                          # shorts ride along (+3)
     out = []
-    for ep in get_db().query("episodes", eq={"status": "approved"}, lte={"publish_at": now_iso()}, order="publish_at", desc=False):
-        if room <= 0:
-            break
+    ahead = (datetime.now(timezone.utc) + timedelta(hours=PREUPLOAD_HOURS)).isoformat(timespec="seconds")
+    for ep in get_db().query("episodes", eq={"status": "approved"}, lte={"publish_at": ahead}, order="publish_at", desc=False):
+        day = (ep.get("publish_at") or "")[:10]
+        if per_day.get(day, 0) >= cap:
+            continue
         publish(ep["id"])
         out.append(ep["id"])
-        room -= 1
+        per_day[day] = per_day.get(day, 0) + 1
     return out
 
 
@@ -446,7 +482,8 @@ def make_short(parent_id: str) -> dict:
         log(f"Short cut from '{p['topic']}' ({end - start:.0f}s)", ep=ep["id"])
         if app_settings().get("autopilot") or p.get("status") in ("published", "approved"):
             ep = db.update("episodes", ep["id"], {"status": "approved",
-                                                  "publish_at": (datetime.now(timezone.utc) + timedelta(hours=26)).isoformat(timespec="seconds")})
+                                                  "publish_at": (max(datetime.now(timezone.utc), _parse(p.get("publish_at")) or datetime.now(timezone.utc))
+                                                                 + timedelta(hours=26)).isoformat(timespec="seconds")})
         return ep
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -657,6 +694,11 @@ def tick(render_work: bool = True, budget_s: int = 2700) -> dict:
                 out["analytics"] = refresh_analytics()
             except Exception as e:  # noqa: BLE001
                 out["analytics"] = f"skipped: {str(e)[:120]}"
+            try:
+                from .kids import growth
+                out["timezone"] = growth.tune_timezone()
+            except Exception as e:  # noqa: BLE001
+                out["timezone"] = f"skipped: {str(e)[:120]}"
             try:
                 db.prune()
             except Exception:  # noqa: BLE001

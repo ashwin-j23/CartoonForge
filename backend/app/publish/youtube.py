@@ -187,6 +187,19 @@ def retention(ids: list[str], refresh_token: str = "") -> dict:
     return out
 
 
+def audience_countries(days: int = 28, refresh_token: str = "") -> dict:
+    """{country code: views} for the last `days` days (YouTube Analytics)."""
+    from datetime import date, timedelta
+    tok = _access_token(refresh_token)
+    r = httpx.get("https://youtubeanalytics.googleapis.com/v2/reports", timeout=30,
+                  params={"ids": "channel==MINE", "startDate": (date.today() - timedelta(days=days)).isoformat(),
+                          "endDate": date.today().isoformat(), "metrics": "views", "dimensions": "country",
+                          "sort": "-views", "maxResults": 25},
+                  headers={"Authorization": f"Bearer {tok}"})
+    r.raise_for_status()
+    return {c: int(v) for c, v in r.json().get("rows") or []}
+
+
 def retention_curve(video_id: str, refresh_token: str = "") -> list[tuple[float, float]]:
     """[(elapsed ratio 0..1, audience watch ratio)] — how many viewers are still watching at each point."""
     from datetime import date

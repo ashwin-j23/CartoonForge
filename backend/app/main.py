@@ -116,13 +116,18 @@ def _worker():
             _busy["v"] = False
 
 
+_last_dispatch: dict = {}
+
+
 def _dispatch_github(workflow: str = "") -> bool:
     if not (config.GITHUB_REPO and config.GITHUB_TOKEN):
+        _last_dispatch["status"] = "no GITHUB_TOKEN" if config.GITHUB_REPO else "no GITHUB_REPO"
         return False
     wf = workflow or config.GITHUB_WORKFLOW
     r = httpx.post(f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/{wf}/dispatches",
                    headers={"Authorization": f"Bearer {config.GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
                    json={"ref": config.GITHUB_REF}, timeout=20)
+    _last_dispatch["status"] = r.status_code
     return r.status_code < 300
 
 
@@ -1048,13 +1053,16 @@ def heartbeat(force: bool = False) -> dict:
     if config.WORKER_MODE != "github":           # local/VPS: the in-process scheduler already does this
         db.set_setting("heartbeat", hb)
         return {**out, "mode": "inline"}
-    if db.query("episodes", eq={"status": "approved"}, lte={"publish_at": now_iso()}, limit=1):
+    ahead = (datetime.now(timezone.utc) + timedelta(hours=pipeline.PREUPLOAD_HOURS)).isoformat(timespec="seconds")
+    if db.query("episodes", eq={"status": "approved"}, lte={"publish_at": ahead}, limit=1):
         out["publish"] = _dispatch_github("publish.yml")
     queued = db.query("episodes", in_={"status": ["planned", "scripted"]}, limit=1)
     if queued and now - float(hb.get("worker_at") or 0) > WORKER_EVERY:
         out["worker"] = _dispatch_github()
         if out["worker"]:
             hb["worker_at"] = now
+    if out.get("publish") is False or out.get("worker") is False:
+        out["github"] = _last_dispatch.get("status")      # e.g. 403 = token can't start workflows
     db.set_setting("heartbeat", hb)
     return out
 

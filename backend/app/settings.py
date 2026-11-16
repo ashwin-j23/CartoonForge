@@ -15,7 +15,7 @@ DEFAULTS: dict = {
     "feedback_cta": True,                 # end card asks grown-ups for feedback (link in the description)                       # the dashboard's public address (saved by Vercel; used for feedback links)  # youtube.com/@HoppyHopHopTV (used in descriptions)
     "channel_tagline": "Songs, stories and smiles for curious little minds",
     "language": "en",                     # main episode language (ISO 639-1)
-    "timezone": "UTC",
+    "timezone": "America/New_York",       # posting times follow this zone (auto-moved to where viewers are)
     "full_auto": False,                   # Full auto mode (app/automation.py): plan → make → gates → publish, hands-off
     "auto_retry": True,                   # failed episodes go round again (max_retries, 30 min apart)
     "max_retries": 2,
@@ -24,7 +24,8 @@ DEFAULTS: dict = {
     "episodes_per_week": 21,              # kept for the dashboard; scheduling uses episodes_per_day x post_days
     "episodes_per_day": 3,                # long episodes a day (one per posting time)
     "post_days": [0, 1, 2, 3, 4, 5, 6],   # 0 = Monday
-    "post_times": ["07:00", "12:30", "17:30"],   # local: breakfast, lunch/nap, after school (parents press play)
+    "post_times": ["08:00", "11:00", "16:00"],   # local: breakfast, late morning, after school/nap (parents press play)
+    "auto_timezone": True,                # move posting times to the country most views come from
     "post_time": "07:30",                 # (legacy single slot)
     "trend_share": 0.6,                   # share of new episodes taken from the trend analyser (rest = balanced mix)
     "variety_max": 0.32,                  # block a script whose lines overlap > 32% with a recent one (inauthentic-content guard)
