@@ -1,0 +1,49 @@
+# Publisher: every 30 minutes, publish whatever is due (approved episodes whose posting slot has passed) and
+# their Shorts. Quick (no writing/rendering), so videos go live within ~30 minutes of their slot instead of
+# waiting for the 6-hourly render worker. Safe to overlap with the worker: each episode is claimed atomically.
+name: publish
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: cartoonforge-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ENV: production
+      DATA_DIR: ${{ github.workspace }}/.data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check config
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ]; then echo "::error::Add SUPABASE_URL and SUPABASE_SERVICE_KEY secrets"; exit 1; fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements-render.txt
+      - name: Install ffmpeg (Shorts are cut at publish time)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core > /dev/null
+      - name: Install deps
+        run: pip install -r backend/requirements-render.txt
+      - name: Cache voice model (Kokoro ~350 MB)
+        uses: actions/cache@v4
+        with:
+          path: .data/models
+          key: kokoro-v1.0
+      - name: Publish what is due
+        working-directory: backend
+        run: python -m app.worker publish
