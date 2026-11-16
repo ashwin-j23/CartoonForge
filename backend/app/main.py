@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import config, pipeline
-from .db import get_db
+from .db import get_db, now_iso
 from .kids import cast, categories, growth, languages, planner, psychology
 from .settings import DEFAULTS, app_settings, import_env_secrets, save_app_settings, save_secrets, secrets_status
 
@@ -116,10 +116,11 @@ def _worker():
             _busy["v"] = False
 
 
-def _dispatch_github() -> bool:
+def _dispatch_github(workflow: str = "") -> bool:
     if not (config.GITHUB_REPO and config.GITHUB_TOKEN):
         return False
-    r = httpx.post(f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/{config.GITHUB_WORKFLOW}/dispatches",
+    wf = workflow or config.GITHUB_WORKFLOW
+    r = httpx.post(f"https://api.github.com/repos/{config.GITHUB_REPO}/actions/workflows/{wf}/dispatches",
                    headers={"Authorization": f"Bearer {config.GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
                    json={"ref": config.GITHUB_REF}, timeout=20)
     return r.status_code < 300
@@ -1026,16 +1027,54 @@ def tick_now():
     return {"result": "Pipeline run queued"}
 
 
+HEARTBEAT_EVERY = 540          # s; callers may ping more often, extra pings are no-ops
+WORKER_EVERY = 5 * 3600        # s; start the render farm for queued work at most this often
+
+
+def heartbeat(force: bool = False) -> dict:
+    """Start whatever is due. GitHub's own cron is best-effort (runs get delayed or dropped), so an outside
+    scheduler (Supabase pg_cron, Vercel Cron, any uptime pinger) pings this. Cheap and idempotent: it only
+    dispatches GitHub workflows, at most once per HEARTBEAT_EVERY, so it's safe to leave public."""
+    db = get_db()
+    now = time.time()
+    hb = db.get_setting("heartbeat", {}) or {}
+    if not force and now - float(hb.get("at") or 0) < HEARTBEAT_EVERY:
+        return {"ok": True, "skipped": "too soon"}
+    hb["at"] = now
+    out: dict = {"ok": True}
+    if app_settings().get("kill_switch"):
+        db.set_setting("heartbeat", hb)
+        return {**out, "paused": True}
+    if config.WORKER_MODE != "github":           # local/VPS: the in-process scheduler already does this
+        db.set_setting("heartbeat", hb)
+        return {**out, "mode": "inline"}
+    if db.query("episodes", eq={"status": "approved"}, lte={"publish_at": now_iso()}, limit=1):
+        out["publish"] = _dispatch_github("publish.yml")
+    queued = db.query("episodes", in_={"status": ["planned", "scripted"]}, limit=1)
+    if queued and now - float(hb.get("worker_at") or 0) > WORKER_EVERY:
+        out["worker"] = _dispatch_github()
+        if out["worker"]:
+            hb["worker_at"] = now
+    db.set_setting("heartbeat", hb)
+    return out
+
+
+@app.api_route("/api/public/heartbeat", methods=["GET", "POST"])
+def public_heartbeat():
+    return heartbeat()
+
+
 @app.api_route("/api/cron/tick", methods=["GET", "POST"])
 def cron_tick(request: Request):
-    """Publishes what is due. Called by Vercel Cron (GET, Authorization: Bearer CRON_SECRET) or any scheduler
-    (POST, x-cron-secret header)."""
+    """Vercel Cron (GET, Authorization: Bearer CRON_SECRET) or any scheduler (POST, x-cron-secret header)."""
     got = request.headers.get("x-cron-secret", "")
     h = request.headers.get("authorization", "")
     if not got and h.lower().startswith("bearer "):
         got = h[7:]
     if not config.CRON_SECRET or not hmac.compare_digest(got, config.CRON_SECRET):
         raise HTTPException(401, "Bad cron secret")
+    if config.WORKER_MODE == "github":
+        return heartbeat(force=True)
     return {"published": pipeline.publish_due()}
 
 

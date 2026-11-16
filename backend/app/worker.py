@@ -13,6 +13,17 @@ import sys
 from . import config, pipeline
 
 
+def _mark_worker() -> None:
+    """Tell the heartbeat a render-farm run just started (so it doesn't start another one)."""
+    import time
+    from .db import get_db
+    try:
+        db = get_db()
+        db.set_setting("heartbeat", {**(db.get_setting("heartbeat", {}) or {}), "worker_at": time.time()})
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def main(argv: list[str]) -> int:
     probs = config.check_security(for_web=False)
     if probs and config.IS_PROD:
@@ -20,6 +31,7 @@ def main(argv: list[str]) -> int:
         return 2
     cmd = argv[1] if len(argv) > 1 else "tick"
     if cmd == "tick":
+        _mark_worker()
         print(json.dumps(pipeline.tick(True, int(argv[2]) if len(argv) > 2 else 2700), indent=2, default=str))
     elif cmd == "process":
         ep = pipeline.process(argv[2])
