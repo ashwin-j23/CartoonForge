@@ -11,6 +11,32 @@ from ..llm.router import LLMError, complete_json
 from . import categories, languages, psychology, safety
 from .growth import SEO_KEYWORDS
 
+# Search phrases that promise specific content -> words that must appear somewhere in the script for the promise to
+# be true. Stops titles like "Learn Colors" on an episode about frogs (the model copies example phrases).
+_PROMISES = {
+    r"\bcolou?rs?\b": ("color", "colour", "red", "blue", "yellow", "green", "purple", "orange"),
+    r"\bshapes?\b": ("shape", "circle", "square", "triangle"),
+    r"\bcount(ing)?\b|\bnumbers?\b": ("count", "number", "how many"),
+    r"\babc\b|\bphonics\b|\balphabet\b|\bletters?\b": ("letter", "abc", "alphabet", "phonics"),
+    r"\bbedtime\b|\bsleep\b|\blullaby\b": ("sleep", "bed", "night", "goodnight", "lullaby"),
+    r"\banimal sounds?\b": ("sound", "moo", "roar", "quack", "oink", "baa", "woof", "ribbit"),
+    r"\bdinosaurs?\b": ("dinosaur",),
+    r"\bteeth\b": ("teeth", "tooth"),
+    r"\bfeelings?\b|\bemotions?\b": ("feel", "happy", "sad", "angry", "emotion"),
+    r"\bnursery rhymes?\b": ("rhyme", "song", "sing"),
+}
+
+
+def _script_text(script: dict) -> str:
+    import json
+    return json.dumps(script, ensure_ascii=False).lower()
+
+
+def unfounded(text: str, script: dict) -> list[str]:
+    """Search phrases in `text` that promise something the episode doesn't contain."""
+    body, low = _script_text(script), str(text or "").lower()
+    return [m.group(0) for pat, need in _PROMISES.items() if (m := re.search(pat, low)) and not any(w in body for w in need)]
+
 
 def _ts(sec: float) -> str:
     sec = int(sec)
@@ -50,7 +76,9 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
         data, _ = complete_json(
             "You write YouTube metadata for a trusted kids channel. Parents read it. Honest, warm, specific, no "
             "clickbait lies, no ALL CAPS, at most 2 emojis. Titles lead with the exact phrases parents search "
-            "(e.g. 'Counting Song', 'Learn Colors', 'Bedtime Story', 'Nursery Rhymes', 'for Toddlers'). JSON only.",
+            "(e.g. 'Counting Song', 'Learn Colors', 'Bedtime Story', 'Nursery Rhymes', 'for Toddlers'), but ONLY phrases "
+            "that truly describe THIS episode: never name a skill (colors, counting, ABC...) the episode doesn't teach. "
+            "JSON only.",
             f"Channel: {name}. Episode: {script.get('title_idea')} ({cat['name']}, ages {b['ages']}). "
             f"Summary: {script.get('summary')}. Key words: {script.get('key_words')}. Lesson: {script.get('lesson')}.\n"
             f"Return {{\"title\": str (max 70 chars; {style_rule}, e.g. one of: "
@@ -63,8 +91,12 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
     except (LLMError, ValueError):
         meta = dict(fallback)
     meta["title"] = re.sub(r"\s+", " ", str(meta["title"])).strip()[:100]
-    if any(i["level"] == "block" for i in safety.check_title(meta["title"])):
+    if any(i["level"] == "block" for i in safety.check_title(meta["title"])) or unfounded(meta["title"], script):
         meta["title"] = fallback["title"]
+    if unfounded(meta.get("thumb_text", ""), script):
+        meta["thumb_text"] = ""
+    meta["learning_goals"] = [g for g in meta.get("learning_goals") or [] if not unfounded(g, script)]
+    meta["tags"] = [t for t in meta.get("tags", []) if not unfounded(t, script)]
     goals = meta.get("learning_goals") or []
     if src:
         from .books import credit
