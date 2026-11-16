@@ -91,3 +91,17 @@ def test_short_script_gets_topped_up(monkeypatch):
 def test_word_budget_uses_real_voice_speed():
     from app.kids import writer
     assert writer.WRITE_WPM >= 160                     # the band wpm (~110) made every episode ~55% too short
+
+
+def test_overnight_failure_is_busy_not_failed():
+    """The exact 23:29 mix: Gemini + Groq rate-limited, NVIDIA timed out, OpenAI 429 'no credits', Anthropic billing."""
+    errs = ["gemini: cooling down after: 429 rate limit on every model (gemini-3.5-flash-lite): 503",
+            "groq: 429 rate limit on every model (openai/gpt-oss-20b): 429 Rate limit reached",
+            "nvidia: The read operation timed out",
+            "openai: 429 rate limit on every model (gpt-4o-mini): 429 { 'message': 'You have no credits r",
+            "anthropic: [key/billing] 400 Your credit balance is too low"]
+    usable = [e for e in errs if "[key/billing]" not in e and not router._broken(e)]
+    assert [e.split(":")[0] for e in usable] == ["gemini", "groq", "nvidia"]
+    assert all(router._busy(e) for e in usable)
+    assert router._broken(errs[3]) and not router._busy(errs[3])
+    assert not router._broken("gemini: 429 You exceeded your current quota")      # free-tier minute limit = busy

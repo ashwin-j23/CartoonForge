@@ -60,6 +60,18 @@ _RATE_LIMIT = re.compile(r"\b429\b|quota|rate limit|resource.?exhausted|too many
 # A wrong/expired key or an empty balance: that provider is unusable until the owner fixes it (not "busy").
 _BROKEN = re.compile(r"\b40[13]\b|invalid.{0,20}(api )?key|incorrect api key|authori[sz]ation failed|"
                      r"credit balance|billing|insufficient.{0,10}(funds|quota|credit)", re.I)
+# An empty balance wins over its "429" status code (OpenAI answers 429 "You have no credits").
+_NO_CREDIT = re.compile(r"no credits|insufficient_quota|credit balance is too low|billing", re.I)
+# Network hiccups are temporary like a rate limit: wait and retry, don't fail the episode.
+_TRANSIENT = re.compile(r"timed out|timeout|connection (error|reset|refused)|temporarily unavailable|\b50[234]\b", re.I)
+
+
+def _broken(msg: str) -> bool:
+    return bool(_NO_CREDIT.search(msg)) or (bool(_BROKEN.search(msg)) and not _RATE_LIMIT.search(msg))
+
+
+def _busy(msg: str) -> bool:
+    return not _broken(msg) and bool(_RATE_LIMIT.search(msg) or _TRANSIENT.search(msg) or "cooling down" in msg)
 _MODEL_GONE = re.compile(r"\b(404|410)\b.*(model|gone|not found|does not exist|decommission|retired|no longer)", re.I | re.S)
 _working_model: dict[str, str] = {}
 
@@ -241,13 +253,13 @@ def complete(system: str, user, *, temperature: float = 0.9, max_tokens: int = 2
             st["fail"] += 1
             st["last_error"] = msg[:200]
             # broken key / no credit -> skip for an hour; rate limit / quota -> 10 min; other errors -> 1 min
-            broken = bool(_BROKEN.search(msg)) and not _RATE_LIMIT.search(msg)
+            broken = _broken(msg)
             _cooldown[name] = time.time() + (3600 if broken else 600 if _RATE_LIMIT.search(msg) else 60)
             errors.append(f"{name}: {'[key/billing] ' if broken else ''}{msg[:120]}")
     if not errors:
         raise LLMError("No AI provider configured. Add at least one API key in Settings → Keys.")
-    usable = [e for e in errors if "[key/billing]" not in e and not (_BROKEN.search(e) and not _RATE_LIMIT.search(e))]
-    if usable and all(_RATE_LIMIT.search(e) or "cooling down" in e for e in usable):
+    usable = [e for e in errors if "[key/billing]" not in e and not _broken(e)]
+    if usable and all(_busy(e) for e in usable):
         raise LLMBusy("All working providers are rate-limited — " + " | ".join(errors))
     raise LLMError("All providers failed — " + " | ".join(errors))
 
