@@ -278,31 +278,50 @@ FIXED_KINDS = ("hello", "goodbye", "song", "recap")   # these have a set length;
 
 def _top_up(segments: list[dict], plan: dict, cat: dict, band_id: str, lang: str, minutes: float,
             source: dict | None, log=print) -> None:
-    """Models write fewer words than asked. If the script times out under 85% of the target, rewrite the two
-    biggest teaching/story segments longer (once), so the episode lands inside the QA length gate."""
+    """Models write fewer words than asked, mostly in movement / feelings / game segments. If the script times out
+    under 88% of the target, the segments with the biggest shortfall against their OWN planned minutes get new
+    lines that continue them (another round, another move, another example), until the script is long enough."""
     target = minutes * 60
     est = template_seconds(segments, band_id)
-    if est >= .85 * target:
+    if est >= .88 * target:
         return
-    ratio = min(2.2, target / max(1.0, est) * 1.05)
     outl = plan["segments"]
-    order = sorted((i for i, s in enumerate(segments) if s["kind"] not in FIXED_KINDS),
-                   key=lambda i: -sum(len(sc["text"].split()) for sc in segments[i]["scenes"]))[:2]
-    for i in order:
-        seg = {**outl[i], "minutes": float(outl[i].get("minutes") or 1.5) * ratio}
-        tail = [s["text"] for s in segments[i - 1]["scenes"]] if i else []
+    start = est
+
+    def shortfall(i):
+        planned = float((outl[i] if i < len(outl) else {}).get("minutes") or 1.5) * 60
+        return planned - template_seconds([segments[i]], band_id) + 9.8          # minus the fixed jingle/end card
+
+    for _ in range(4):                                       # at most 4 extensions per episode (AI quota)
+        need = .95 * target - est
+        if need <= 0:
+            break
+        cands = sorted((i for i, s in enumerate(segments) if s["kind"] not in FIXED_KINDS), key=shortfall, reverse=True)
+        if not cands or shortfall(cands[0]) < 20:
+            cands = sorted((i for i, s in enumerate(segments) if s["kind"] not in FIXED_KINDS),
+                           key=lambda i: -len(segments[i]["scenes"]))
+        if not cands:
+            break
+        i = cands[0]
+        add_s = max(30.0, min(need, max(shortfall(i), 45.0)))
+        seg = {**(outl[i] if i < len(outl) else {}), "kind": segments[i]["kind"], "title": segments[i]["title"],
+               "set": segments[i]["set"], "minutes": round(add_s / 60, 1)}
+        so_far = [s["text"] for s in segments[i]["scenes"]]
         try:
-            scenes = write_segment(seg, plan, cat, band_id, tail, lang, source=source,
-                                   fix_notes="TOO SHORT: make this segment about twice as long - one more question for "
-                                             "the child, one more example or game step, same story and characters.")
+            more = write_segment(seg, plan, cat, band_id, so_far, lang, source=source, fix_notes=(
+                "CONTINUE this same segment - it is too short. Do NOT repeat or restart it: the lines above are "
+                f"already in the episode. Write about {int(add_s * WRITE_WPM / 60)} words of NEW lines that carry on "
+                "naturally: one more round of the game, one more move to copy, one more example or question with a "
+                "pause for the child. Do not say hello or goodbye."))
         except Exception as e:  # noqa: BLE001  (a top-up is a bonus, never a failure)
             log(f"Could not lengthen '{segments[i]['title']}': {e}")
-            continue
-        old = len(segments[i]["scenes"])
-        if len(scenes) > old:
-            segments[i]["scenes"] = scenes
-            log(f"Lengthened '{segments[i]['title']}' ({old} -> {len(scenes)} lines)")
-    log(f"Length check: {est / 60:.1f} -> {template_seconds(segments, band_id) / 60:.1f} min (target {minutes:.0f})")
+            break
+        if not more:
+            break
+        segments[i]["scenes"] = segments[i]["scenes"] + more
+        est = template_seconds(segments, band_id)
+        log(f"Lengthened '{segments[i]['title']}' (+{len(more)} lines)")
+    log(f"Length check: {start / 60:.1f} -> {est / 60:.1f} min (target {minutes:.0f})")
 
 
 def rewrite_segments(script: dict, notes: dict[int, str], log=print) -> dict:

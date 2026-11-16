@@ -72,20 +72,27 @@ def test_outline_is_never_salvaged(monkeypatch):
 
 
 def test_short_script_gets_topped_up(monkeypatch):
+    """The real Morning Routine shape: movement/feelings written far under their plan get CONTINUED (appended)."""
     from app.kids import writer
-    seg = lambda kind, n: {"kind": kind, "title": kind, "set": "meadow",                     # noqa: E731
-                           "scenes": [{"speaker": "hoppy", "text": "one two three four five six", "kind": "say"}] * n}
-    segments = [seg("hello", 4), seg("learn", 20), seg("story", 25), seg("goodbye", 4)]
-    plan = {"segments": [{"kind": s["kind"], "minutes": 2, "set": "meadow"} for s in segments]}
+    line = {"speaker": "hoppy", "text": "one two three four five six", "kind": "say"}
+    seg = lambda kind, n: {"kind": kind, "title": kind, "set": "meadow", "scenes": [dict(line)] * n}   # noqa: E731
+    segments = [seg("hello", 6), seg("learn", 40), seg("movement", 3), seg("feelings", 4), seg("goodbye", 4)]
+    plan = {"segments": [{"kind": "hello", "minutes": .6}, {"kind": "learn", "minutes": 2},
+                         {"kind": "movement", "minutes": 1.8}, {"kind": "feelings", "minutes": 1.8},
+                         {"kind": "goodbye", "minutes": .5}]}
     asked = []
 
-    def fake_write(s, *a, **k):
-        asked.append((s["kind"], round(s["minutes"], 1)))
-        return [{"speaker": "hoppy", "text": "one two three four five six", "kind": "say"}] * 90
+    def fake_write(s, plan, cat, band, prev, lang, **k):
+        asked.append((s["kind"], len(prev)))
+        return [dict(line)] * 25
     monkeypatch.setattr(writer, "write_segment", fake_write)
-    writer._top_up(segments, plan, {}, "preschool", "en", 10, None, log=lambda m: None)
-    assert [k for k, _ in asked] == ["story", "learn"] and all(m > 2 for _, m in asked)
-    assert len(segments[2]["scenes"]) == 90 and len(segments[0]["scenes"]) == 4      # hello untouched
+    before = writer.template_seconds(segments, "preschool")
+    writer._top_up(segments, plan, {}, "preschool", "en", 8, None, log=lambda m: None)
+    kinds = [k for k, _ in asked]
+    assert kinds[0] in ("movement", "feelings") and "hello" not in kinds and "goodbye" not in kinds
+    assert asked[0][1] > 0                                    # it sees the lines so far: continue, don't restart
+    assert writer.template_seconds(segments, "preschool") > before
+    assert len(segments[0]["scenes"]) == 6 and len(segments[4]["scenes"]) == 4
 
 
 def test_word_budget_uses_real_voice_speed():
