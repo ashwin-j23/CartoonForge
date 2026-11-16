@@ -4,7 +4,7 @@ Layout (16:9): the world (set) fills the frame, Sunny the host lives in the top-
 stand on the ground. When a learning card is on screen the friends move left and the card takes the right
 half (and Sunny moves to the top-left for that segment, so the card never covers him) — one focal point at a
 time. Motion is gentle (bob, hop, sway, blink); camera shots never slice a character or card at the frame edge;
-segments change with a quick iris wipe (fully closed for a single frame) inside the silent gap between them.
+segments change with a soft, flash-safe iris wipe (fully closed for a single frame) inside the silent gap between them.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import json
 import math
 from functools import lru_cache
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from ..kids import cast as castmod
 from . import expression, palette, sets
@@ -378,14 +378,19 @@ def _countdown(frame, k, cx, cy, r):
 
 
 def _iris(frame: Image.Image, k: float):
-    """k: 0 = fully open, 1 = closed. A soft plum iris, the classic gentle cartoon transition."""
+    """k: 0 = fully open, 1 = closed. The classic gentle cartoon iris, flash-safe: it closes onto the picture's own
+    average colour (lifted a little), so the screen's brightness hardly changes. A dark iris swung the brightness
+    ~115 levels in under half a second at every segment change, which failed the photosensitivity check."""
     if k <= 0.01:
         return frame
     W, H = frame.size
+    avg = frame.convert("RGB").resize((1, 1), Image.BOX).getpixel((0, 0))
+    fill = tuple(int(c + (255 - c) * .18) for c in avg)
     r = math.hypot(W, H) / 2 * (1 - k)
     mask = Image.new("L", (W, H), 255)
     ImageDraw.Draw(mask).ellipse([W / 2 - r, H / 2 - r, W / 2 + r, H / 2 + r], fill=0)
-    frame.paste((70, 50, 110), (0, 0), mask)
+    edge = mask.filter(ImageFilter.GaussianBlur(max(2, H // 180)))       # soft rim, no hard ring
+    frame.paste(fill, (0, 0), edge)
     return frame
 
 
@@ -415,12 +420,17 @@ def _page_turn(frame: Image.Image, k: float) -> Image.Image:
         return frame
     W, H = frame.size
     x = int(W * (1 - k))
+    # paper tone follows the scene's brightness (flash-safe): cream on bright scenes, dusky paper at night
+    avg = frame.convert("RGB").resize((1, 1), Image.BOX).getpixel((0, 0))
+    lum = .299 * avg[0] + .587 * avg[1] + .114 * avg[2]
+    mix = max(0.0, min(.7, (190 - lum) / 190))
+    paper = tuple(int(c * (1 - mix) + a * mix) for c, a in zip((255, 246, 222), avg))
     d = ImageDraw.Draw(frame)
-    d.rectangle([x, 0, W, H], fill=(255, 246, 222))
+    d.rectangle([x, 0, W, H], fill=paper)
     for i in range(14):                               # curl shadow
-        c = 255 - i * 6
-        d.line([(x - i, 0), (x - i, H)], fill=(c, c - 12, c - 30), width=1)
-    d.line([(x, 0), (x, H)], fill=(200, 160, 110), width=max(2, H // 300))
+        sh = 1 - i * .024
+        d.line([(x - i, 0), (x - i, H)], fill=tuple(int(c * sh) for c in paper), width=1)
+    d.line([(x, 0), (x, H)], fill=tuple(int(c * .72) for c in paper), width=max(2, H // 300))
     return frame
 
 
@@ -697,9 +707,11 @@ def _transition(tl: Timeline, t: float) -> tuple[float, bool]:
         d = t - m
         if abs(d) <= hold:
             return 1.0, story
-        if -hold - TRANS < d < -hold:                  # ease-in: closes fast at the end, so it is barely blank
+        # quick near the closed point so the screen is never blank for long; flash safety comes from the iris
+        # colour following the scene (see _iris), not from the easing
+        if -hold - TRANS < d < -hold:
             return ((d + hold + TRANS) / TRANS) ** 2, story
-        if hold < d < hold + TRANS:                    # and snaps open again right away
+        if hold < d < hold + TRANS:
             return (1 - (d - hold) / TRANS) ** 2, story
     return 0.0, False
 
