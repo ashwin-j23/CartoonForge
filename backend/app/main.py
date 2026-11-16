@@ -850,14 +850,34 @@ def overview():
             "settings_summary": {k: s.get(k) for k in ("channel_name", "age_band", "target_minutes", "episodes_per_week", "autopilot")}}
 
 
+def _sched_state(r: dict, now: str) -> tuple[str, str]:
+    """(state, go-live time). live = public on YouTube; uploaded = on YouTube, goes public by itself at the time;
+    uploading = being sent now; waiting = not uploaded yet (it is uploaded up to 12 h before its time);
+    late = its time passed or the last upload attempt failed."""
+    yt = r.get("youtube") or {}
+    if r["status"] == "published":
+        at = yt.get("scheduled_for") or r.get("published_at") or ""
+        at = at.replace("Z", "+00:00")
+        return ("uploaded" if at > now else "live"), at
+    at = r.get("publish_at") or ""
+    if r["status"] == "publishing":
+        return "uploading", at
+    return ("late" if (r.get("error") or (at and at < now)) else "waiting"), at
+
+
 @app.get("/api/calendar", dependencies=[Depends(auth)])
 def calendar():
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rows = get_db().query("episodes", in_={"status": ["approved", "publishing", "published"]}, limit=300)
-    sched = [{"id": r["id"], "title": (r.get("meta") or {}).get("title", r["topic"]), "status": r["status"],
-              "publish_at": r.get("published_at") if r["status"] == "published" else r.get("publish_at"),
-              "kind": r.get("kind", "episode")} for r in rows]
-    return {"scheduled": [x for x in sched if x["publish_at"]], "world_days": planner.upcoming(60),
-            "slots": pipeline.free_slots(8)}
+    sched = []
+    for r in rows:
+        state, at = _sched_state(r, now)
+        if at:
+            sched.append({"id": r["id"], "title": (r.get("meta") or {}).get("title", r["topic"]), "status": r["status"],
+                          "state": state, "publish_at": at, "kind": r.get("kind", "episode"),
+                          "url": (r.get("youtube") or {}).get("url"), "thumb_url": r.get("thumb_url"),
+                          "error": (r.get("error") or "")[:200] if state == "late" else ""})
+    return {"scheduled": sched, "world_days": planner.upcoming(60), "slots": pipeline.free_slots(8), "now": now}
 
 
 @app.get("/api/analytics", dependencies=[Depends(auth)])
