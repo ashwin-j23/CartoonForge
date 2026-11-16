@@ -336,7 +336,94 @@ function Playbook() {
   )
 }
 
-const TABS = [['analytics', 'Analytics', null, 'chart'], ['growth', 'Growth', null, 'rocket'], ['playbook', 'Playbook', null, 'bulb']]
+/* =========================================================== parent feedback */
+const ENJOY_LABEL = { loved: '😍 Loved it', ok: '🙂 OK', not_really: '😕 Not really' }
+const RATE_LABEL = [['style', 'Look & design'], ['animation', 'Animation'], ['voices', 'Songs & voices'], ['learning', 'Learning']]
+
+function FeedbackTab() {
+  const { data, loading } = useApi('/feedback', { ms: 60000 })
+  const [busy, run] = useAction()
+  const [ai, setAi] = useState(null)
+  const nav = useNavigate()
+  if (loading && !data) return <Skeleton h={300} r={14} />
+  const s = data?.summary || {}
+  const stars = (v) => (v == null ? '—' : `${v.toFixed(1)} ★`)
+  const make = async (topic) => {
+    const ep = await run(`make-${topic}`, () => post('/feedback/make', { topic }), `Episode queued: ${topic}`)
+    if (ep?.id) nav(`/episodes/${ep.id}`)
+  }
+  const askAi = async () => { const r = await run('ai', () => post('/feedback/ai')); if (r) setAi(r) }
+  return (
+    <>
+      <section className="stats">
+        <Stat icon="users" tone="blue" label="Responses" value={fmtNum(s.count || 0)} sub="from parents & carers" />
+        <Stat icon="heart" tone="pink" label="Kids loved it" value={s.count ? `${s.loved_pct}%` : '—'} sub="said 😍 Loved it" />
+        <Stat icon="palette" tone="green" label="Look & animation" value={stars(s.avg?.style)} sub={`animation ${stars(s.avg?.animation)}`} />
+        <Stat icon="music" tone="amber" label="Voices & learning" value={stars(s.avg?.voices)} sub={`learning ${stars(s.avg?.learning)}`} />
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <div><h2>What parents are saying</h2><p className="muted small">YouTube turns comments off on made-for-kids videos, so every description links grown-ups to a 1-minute form.</p></div>
+          <div className="row-gap">
+            {data?.form_url && <a className="btn sm" href={data.form_url} target="_blank" rel="noreferrer"><Icon name="external" size={14} />Open the form</a>}
+            <button className="btn primary sm" disabled={!s.count || busy === 'ai'} onClick={askAi}>
+              {busy === 'ai' ? <Spinner size={14} /> : <Icon name="sparkles" size={14} />}AI summary
+            </button>
+          </div>
+        </div>
+        {ai && (
+          <div className="fb-ai">
+            {[['themes', 'Themes'], ['changes', 'Changes to make'], ['praise', 'Keep doing'], ['topics', 'Topics asked for']].map(([k, label]) => (
+              ai[k]?.length ? <div key={k}><h3 className="auto-sub">{label}</h3><ul>{ai[k].map((x, i) => <li key={i}>{x}</li>)}</ul></div> : null
+            ))}
+          </div>
+        )}
+        {!s.count && <Empty icon="inbox" title="No feedback yet">Answers appear here as soon as parents use the link in a video description.</Empty>}
+      </section>
+
+      {s.requests?.length > 0 && (
+        <section className="card">
+          <div className="card-head"><h2>What should Hoppy learn next?</h2><span className="muted small">Most-requested topics</span></div>
+          <ul className="fb-req">
+            {s.requests.map((r) => (
+              <li key={r.topic}>
+                <span className="grow"><b>{r.topic}</b> <Badge size="sm">{r.n}×</Badge></span>
+                <button className="btn sm" disabled={busy === `make-${r.topic}`} onClick={() => make(r.topic)}>
+                  {busy === `make-${r.topic}` ? <Spinner size={14} /> : <Icon name="zap" size={14} />}Make it
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {data?.items?.length > 0 && (
+        <section className="card flush">
+          <div className="card-head pad"><h2>Every response</h2><span className="muted small">Newest first</span></div>
+          <ul className="fb-list">
+            {data.items.map((r) => (
+              <li key={r.id}>
+                <div className="fb-row-top">
+                  {r.enjoyed && <Badge size="sm">{ENJOY_LABEL[r.enjoyed]}</Badge>}
+                  {r.episode_id && <Link to={`/episodes/${r.episode_id}`} className="small">{r.episode_title || `#${r.episode_id}`}</Link>}
+                  <span className="muted tiny grow" style={{ textAlign: 'right' }}>{r.age_band ? `${r.age_band} · ` : ''}{r.created_at ? fmtDate(r.created_at) : ''}</span>
+                </div>
+                <div className="fb-row-rates">
+                  {RATE_LABEL.filter(([k]) => r[k]).map(([k, l]) => <span key={k} className="muted tiny">{l} {'★'.repeat(r[k])}</span>)}
+                </div>
+                {r.change && <p className="small"><b>Change:</b> {r.change}</p>}
+                {r.request && <p className="small"><b>Next:</b> {r.request}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  )
+}
+
+const TABS = [['analytics', 'Analytics', null, 'chart'], ['growth', 'Growth', null, 'rocket'], ['feedback', 'Feedback', null, 'heart'], ['playbook', 'Playbook', null, 'bulb']]
 
 export default function Insights() {
   const { tab } = useParams()
@@ -349,6 +436,7 @@ export default function Insights() {
       <div className="tab-page">
         {tab === 'analytics' && <Analytics />}
         {tab === 'growth' && <Growth />}
+        {tab === 'feedback' && <FeedbackTab />}
         {tab === 'playbook' && <Playbook />}
       </div>
     </div>

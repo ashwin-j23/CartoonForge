@@ -17,6 +17,7 @@ import Calendar from './pages/Calendar'
 import Channel from './pages/Channel'
 import Settings from './pages/Settings'
 import Activity from './pages/Activity'
+import Feedback from './pages/Feedback'
 import './styles.css'
 
 const THEME_KEY = 'ks_theme'
@@ -41,6 +42,14 @@ function App() {
     window.addEventListener(LOGOUT_EVENT, out)
     return () => window.removeEventListener(LOGOUT_EVENT, out)
   }, [])
+
+  const [hash, setHash] = useState(window.location.hash)
+  useEffect(() => {
+    const h = () => setHash(window.location.hash)
+    window.addEventListener('hashchange', h)
+    return () => window.removeEventListener('hashchange', h)
+  }, [])
+  if (hash.startsWith('#/feedback')) return <Feedback />          // public page for parents: no sign-in
 
   if (!token) return <Login onLogin={(t) => { auth.set(t); setToken(t) }} />
 

@@ -117,12 +117,31 @@ create table if not exists characters (
   episodes jsonb default '[]'::jsonb
 );
 
+-- Parent / viewer feedback (public form, linked from every video description)
+create table if not exists feedback (
+  id text primary key,
+  created_at text default to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"+00:00"'),
+  updated_at text,
+  episode_id text,
+  enjoyed text,
+  style integer,
+  animation integer,
+  voices integer,
+  learning integer,
+  change text,
+  request text,
+  age_band text,
+  role text
+);
+create index if not exists feedback_episode on feedback (episode_id);
+
 alter table episodes add column if not exists extra jsonb default '{}'::jsonb;
 alter table events add column if not exists extra jsonb default '{}'::jsonb;
 alter table settings add column if not exists extra jsonb default '{}'::jsonb;
 alter table topics add column if not exists extra jsonb default '{}'::jsonb;
 alter table trends add column if not exists extra jsonb default '{}'::jsonb;
 alter table characters add column if not exists extra jsonb default '{}'::jsonb;
+alter table feedback add column if not exists extra jsonb default '{}'::jsonb;
 
 alter table episodes enable row level security;
 alter table events enable row level security;
@@ -130,6 +149,7 @@ alter table settings enable row level security;
 alter table topics enable row level security;
 alter table trends enable row level security;
 alter table characters enable row level security;
+alter table feedback enable row level security;
 
 -- Storage: create a PUBLIC bucket named "episodes" (Storage → New bucket), or:
 insert into storage.buckets (id, name, public) values ('episodes', 'episodes', true) on conflict (id) do nothing;

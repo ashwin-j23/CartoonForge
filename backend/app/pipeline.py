@@ -362,7 +362,9 @@ def publish(eid: str, force: bool = False) -> dict:
             thumb = thumb.rename(thumb.with_suffix(".jpg"))
         lang = ep.get("language", "en")
         rt = (s.get("edition_channels") or {}).get(lang, "") if lang != s.get("language", "en") else ""
-        res = youtube.upload(local, meta.get("title", ep["topic"]), meta.get("description", ""), meta.get("tags", []),
+        from .kids import feedback
+        desc = meta.get("description", "") if ep.get("kind") == "short" else feedback.with_link(meta.get("description", ""), ep["id"])
+        res = youtube.upload(local, meta.get("title", ep["topic"]), desc, meta.get("tags", []),
                              s.get("youtube_privacy", "public"), thumb, lang.split("-")[0], meta.get("localizations"),
                              rt, meta.get("category_id", "27"), made_for_kids=True,
                              synthetic=bool(s.get("ai_disclosure")), short=ep.get("kind") == "short")

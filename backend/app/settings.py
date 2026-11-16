@@ -10,7 +10,8 @@ from .db import get_db
 
 DEFAULTS: dict = {
     "channel_name": "Hoppy Hop Hop",
-    "channel_handle": "@HoppyHopHopTV",  # youtube.com/@HoppyHopHopTV (used in descriptions)
+    "channel_handle": "@HoppyHopHopTV",
+    "site_url": "",                       # the dashboard's public address (saved by Vercel; used for feedback links)  # youtube.com/@HoppyHopHopTV (used in descriptions)
     "channel_tagline": "Songs, stories and smiles for curious little minds",
     "language": "en",                     # main episode language (ISO 639-1)
     "timezone": "UTC",

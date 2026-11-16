@@ -19,7 +19,7 @@ import httpx
 
 from . import config
 
-TABLES = ("episodes", "events", "settings", "topics", "trends", "characters")
+TABLES = ("episodes", "events", "settings", "topics", "trends", "characters", "feedback")
 
 
 def now_iso() -> str:
@@ -169,6 +169,7 @@ COLUMNS: dict[str, frozenset[str]] = {
     "topics": frozenset(('id', 'created_at', 'updated_at', 'topic', 'category', 'episode_id')),
     "trends": frozenset(('id', 'created_at', 'updated_at', 'topic', 'category', 'age_band', 'score', 'used', 'why', 'angle', 'episode_id')),
     "characters": frozenset(('id', 'created_at', 'updated_at', 'tier', 'name', 'kind', 'species', 'gender', 'age', 'colors', 'outfit', 'skin', 'hair', 'hair_color', 'personality', 'look', 'catchphrase', 'voice', 'pitch', 'origin', 'episodes')),
+    "feedback": frozenset(('id', 'created_at', 'updated_at', 'episode_id', 'enjoyed', 'style', 'animation', 'voices', 'learning', 'change', 'request', 'age_band', 'role')),
 }
 
 

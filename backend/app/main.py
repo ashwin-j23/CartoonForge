@@ -166,6 +166,11 @@ def _start():
         import_env_secrets()
     except Exception as e:  # noqa: BLE001
         print("[startup] could not import env keys:", e)
+    try:                                   # the worker (GitHub) needs the site address for feedback links
+        if config.ON_VERCEL and config.PUBLIC_BASE_URL and app_settings().get("site_url") != config.PUBLIC_BASE_URL:
+            save_app_settings({"site_url": config.PUBLIC_BASE_URL})
+    except Exception as e:  # noqa: BLE001
+        print("[startup] could not save site_url:", e)
     threading.Thread(target=_worker, daemon=True).start()
     if config.INTERNAL_SCHEDULER == "1":
         threading.Thread(target=_scheduler, daemon=True).start()
@@ -665,6 +670,81 @@ def book_series_restart():
     return series.status()
 
 
+# ---------------------------------------------------------------- parent / viewer feedback
+_fb_hits: dict[str, list[float]] = {}
+
+
+@app.get("/api/public/episode/{eid}")
+def public_episode(eid: str):
+    """What the public feedback form shows about a video: only published episodes, only public fields."""
+    e = get_db().get("episodes", eid[:20])
+    if not e or e.get("status") != "published":
+        raise HTTPException(404, "Episode not found")
+    yt = e.get("youtube") or {}
+    return {"id": e["id"], "title": (e.get("meta") or {}).get("title") or e.get("topic"), "thumb_url": e.get("thumb_url"),
+            "youtube_url": yt.get("url") if isinstance(yt, dict) else None,
+            "channel": app_settings().get("channel_name")}
+
+
+@app.post("/api/public/feedback")
+def submit_feedback(body: dict, request: Request):
+    """Public: grown-ups' feedback on an episode. Rate-limited, honeypot, nothing personal stored."""
+    from .kids import feedback
+    if (body or {}).get("website"):                  # honeypot: bots fill every field
+        return {"ok": True}
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "?")
+    recent = [x for x in _fb_hits.get(ip, []) if time.time() - x < 600]
+    if len(recent) >= 5:
+        raise HTTPException(429, "Thanks! You've sent a lot of feedback already, please try again later.")
+    try:
+        row = feedback.clean(body)
+    except ValueError as ex:
+        raise HTTPException(400, str(ex)) from None
+    if row.get("episode_id"):
+        e = get_db().get("episodes", row["episode_id"])
+        if not e or e.get("status") != "published":
+            row["episode_id"] = None
+    _fb_hits[ip] = recent + [time.time()]
+    feedback.save(row)
+    return {"ok": True}
+
+
+@app.get("/api/feedback", dependencies=[Depends(auth)])
+def feedback_list():
+    from .kids import feedback
+    items = feedback.rows()
+    titles = {e["id"]: (e.get("meta") or {}).get("title") or e.get("topic")
+              for e in get_db().query("episodes", eq={"status": "published"}, limit=300)}
+    return {"summary": feedback.summary(items), "items": [{**r, "episode_title": titles.get(r.get("episode_id"))}
+                                                          for r in items[:200]],
+            "form_url": feedback.site_url() + "/#/feedback" if feedback.site_url() else None}
+
+
+@app.post("/api/feedback/ai", dependencies=[Depends(auth)])
+def feedback_ai():
+    from .kids import feedback
+    from .llm.router import LLMError
+    items = feedback.rows()
+    if not items:
+        raise HTTPException(400, "No feedback yet")
+    try:
+        return feedback.ai_summary(items)
+    except (LLMError, ValueError) as ex:
+        raise HTTPException(503, f"AI summary unavailable right now: {str(ex)[:160]}") from None
+
+
+@app.post("/api/feedback/make", dependencies=[Depends(auth)])
+def feedback_make(body: dict):
+    """Turn a topic parents asked for into an episode."""
+    topic = " ".join(str((body or {}).get("topic") or "").split())[:120]
+    if len(topic) < 3:
+        raise HTTPException(400, "Topic too short")
+    ep = pipeline.create(None, topic, None, None, why="Requested by parents (feedback)")
+    get_db().update("episodes", ep["id"], {"why": "Requested by parents (feedback)"})
+    run(pipeline.process, ep["id"])
+    return _full(get_db().get("episodes", ep["id"]))
+
+
 @app.get("/api/optimizer", dependencies=[Depends(auth)])
 def get_optimizer():
     from .kids import optimizer
@@ -783,11 +863,11 @@ def analytics():
         st = r.get("stats") or {}
         tv += st.get("views", 0)
         tl += st.get("likes", 0)
-        eps.append({"id": r["id"], "title": (r.get("meta") or {}).get("title", r["topic"]), "category": r["category"],
+        eps.append({"id": r["id"], "title": (r.get("meta") or {}).get("title", r.get("topic")), "category": r.get("category"),
                     "kind": r.get("kind", "episode"), "views": st.get("views", 0), "likes": st.get("likes", 0),
                     "avg_pct": st.get("avg_pct"), "published_at": r.get("published_at"),
                     "url": (r.get("youtube") or {}).get("url")})
-        c = per.setdefault(r["category"], {"episodes": 0, "views": 0, "pct": []})
+        c = per.setdefault(r.get("category") or "other", {"episodes": 0, "views": 0, "pct": []})
         c["episodes"] += 1
         c["views"] += st.get("views", 0)
         if st.get("avg_pct") is not None:
