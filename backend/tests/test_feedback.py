@@ -60,3 +60,14 @@ def test_description_gets_the_feedback_link_once():
     assert d.startswith("Hook line.\n\n👨‍👩‍👧 Grown-ups") and "https://cartoonforge.vercel.app/#/feedback?v=abc123" in d
     assert feedback.with_link(d, "abc123") == d
     save_app_settings({"site_url": ""})
+
+
+def test_never_links_to_localhost_and_replaces_an_old_line(monkeypatch):
+    monkeypatch.setattr(config, "PUBLIC_BASE_URL", "http://localhost:8000")
+    save_app_settings({"site_url": "https://cartoonforge.vercel.app"})
+    assert feedback.site_url() == "https://cartoonforge.vercel.app"
+    old = "Hook.\n\n👨‍👩‍👧 Grown-ups: how was this episode? Tell us 👉 http://localhost:8000/#/feedback?v=e1\n\nMore."
+    new = feedback.with_link(old, "e1")
+    assert "localhost" not in new and new.count("Grown-ups: how was this episode?") == 1
+    save_app_settings({"site_url": ""})
+    assert feedback.site_url() == "" and feedback.with_link("x", "e1") == "x"      # no public address: no link

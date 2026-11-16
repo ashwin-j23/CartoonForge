@@ -26,8 +26,16 @@ _PHONE = re.compile(r"(?:\+?\d[\s().-]*){7,}")
 _URL = re.compile(r"https?://\S+|www\.\S+", re.I)
 
 
+_LOCAL = re.compile(r"//(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])\b", re.I)
+LINE_START = "👨‍👩‍👧 Grown-ups: how was this episode?"
+
+
 def site_url() -> str:
-    return (config.PUBLIC_BASE_URL or app_settings().get("site_url") or "").rstrip("/")
+    """The public address for links in YouTube descriptions; a local dev address is never used."""
+    for u in (config.PUBLIC_BASE_URL, app_settings().get("site_url")):
+        if u and not _LOCAL.search(u):
+            return u.rstrip("/")
+    return ""
 
 
 def link(eid: str) -> str:
@@ -38,10 +46,13 @@ def link(eid: str) -> str:
 def with_link(description: str, eid: str) -> str:
     """Add the grown-ups' feedback line after the opening paragraph (once)."""
     url = link(eid)
-    if not url or url in (description or ""):
-        return description or ""
-    line = f"👨‍👩‍👧 Grown-ups: how was this episode? Tell us in 1 minute (what to change, what Hoppy should learn next) 👉 {url}"
-    parts = (description or "").split("\n\n", 1)
+    description = description or ""
+    if not url or url in description:
+        return description
+    # replace an older feedback line (e.g. a wrong address) instead of adding a second one
+    description = "\n\n".join(p for p in description.split("\n\n") if not p.startswith(LINE_START))
+    line = f"{LINE_START} Tell us in 1 minute (what to change, what Hoppy should learn next) 👉 {url}"
+    parts = description.split("\n\n", 1)
     return f"{parts[0]}\n\n{line}" + (f"\n\n{parts[1]}" if len(parts) > 1 else "")
 
 
