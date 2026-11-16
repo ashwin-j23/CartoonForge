@@ -128,6 +128,11 @@ def _dispatch_github(workflow: str = "") -> bool:
                    headers={"Authorization": f"Bearer {config.GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
                    json={"ref": config.GITHUB_REF}, timeout=20)
     _last_dispatch["status"] = r.status_code
+    if r.status_code >= 300:
+        try:
+            _last_dispatch["status"] = f"{r.status_code}: {str(r.json().get('message', ''))[:120]}"
+        except ValueError:
+            pass
     return r.status_code < 300
 
 
