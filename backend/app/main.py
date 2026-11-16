@@ -125,12 +125,22 @@ def _dispatch_github() -> bool:
     return r.status_code < 300
 
 
-def run(fn, *args):
-    """Queue heavy work. In github mode, writing/rendering goes to the render farm instead."""
-    if config.WORKER_MODE == "github" and fn in (pipeline.process,):
+HEAVY_ON_VERCEL = "On Vercel, writing and rendering run on the GitHub render farm"
+
+
+def run(fn, *args) -> bool:
+    """Queue heavy work. In github mode, writing/rendering goes to the render farm instead.
+    On Vercel nothing heavy ever runs in-process (no voices, 5-minute limit): if the render farm can't be started
+    right now, the work stays queued for its next scheduled run. Returns True if the work was started/queued here."""
+    if config.WORKER_MODE == "github" and fn in (pipeline.process, pipeline.tick, pipeline.publish):
         if _dispatch_github():
-            return
+            return True
+    if config.ON_VERCEL:
+        get_db().log(f"{HEAVY_ON_VERCEL}; it couldn't be started now (is GITHUB_TOKEN set on Vercel?). "
+                     "Queued for its next scheduled run (every 6 hours).", "warn")
+        return False
     _jobs.put((fn, args))
+    return True
 
 
 def _scheduler():
@@ -918,6 +928,9 @@ def automation_run():
     from . import automation
     if config.WORKER_MODE == "github" and _dispatch_github():
         return {"result": "Render farm started on GitHub Actions"}
+    if config.ON_VERCEL:
+        raise HTTPException(503, "Couldn't start the GitHub render farm: add GITHUB_TOKEN in Vercel → Settings → "
+                                 "Environment Variables. The scheduled worker still runs every 6 hours.")
     run(automation.heartbeat)
     return {"result": "Automation cycle queued"}
 
@@ -926,6 +939,9 @@ def automation_run():
 def tick_now():
     if config.WORKER_MODE == "github" and _dispatch_github():
         return {"result": "Render farm started on GitHub Actions"}
+    if config.ON_VERCEL:
+        raise HTTPException(503, "Couldn't start the GitHub render farm: add GITHUB_TOKEN in Vercel → Settings → "
+                                 "Environment Variables. The scheduled worker still runs every 6 hours.")
     run(pipeline.tick, True, 2700)
     return {"result": "Pipeline run queued"}
 

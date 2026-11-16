@@ -69,3 +69,25 @@ def test_outline_is_never_salvaged(monkeypatch):
     monkeypatch.setattr(router, "complete", fake_complete)
     data, _ = router.complete_json("s", "u", salvage=False, max_tokens=6000)
     assert data == {"segments": []} and len(calls) == 2 and calls[1]["max_tokens"] == 10800
+
+
+def test_short_script_gets_topped_up(monkeypatch):
+    from app.kids import writer
+    seg = lambda kind, n: {"kind": kind, "title": kind, "set": "meadow",                     # noqa: E731
+                           "scenes": [{"speaker": "hoppy", "text": "one two three four five six", "kind": "say"}] * n}
+    segments = [seg("hello", 4), seg("learn", 20), seg("story", 25), seg("goodbye", 4)]
+    plan = {"segments": [{"kind": s["kind"], "minutes": 2, "set": "meadow"} for s in segments]}
+    asked = []
+
+    def fake_write(s, *a, **k):
+        asked.append((s["kind"], round(s["minutes"], 1)))
+        return [{"speaker": "hoppy", "text": "one two three four five six", "kind": "say"}] * 90
+    monkeypatch.setattr(writer, "write_segment", fake_write)
+    writer._top_up(segments, plan, {}, "preschool", "en", 10, None, log=lambda m: None)
+    assert [k for k, _ in asked] == ["story", "learn"] and all(m > 2 for _, m in asked)
+    assert len(segments[2]["scenes"]) == 90 and len(segments[0]["scenes"]) == 4      # hello untouched
+
+
+def test_word_budget_uses_real_voice_speed():
+    from app.kids import writer
+    assert writer.WRITE_WPM >= 160                     # the band wpm (~110) made every episode ~55% too short

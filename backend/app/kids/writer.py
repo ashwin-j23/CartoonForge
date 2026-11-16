@@ -108,7 +108,9 @@ def outline(category: dict, topic: str, band_id: str, minutes: float, lang: str 
 def write_segment(seg: dict, plan: dict, category: dict, band_id: str, prev_tail: list[str], lang: str = "en",
                   fix_notes: str = "", source: dict | None = None) -> list[dict]:
     b = psychology.band(band_id)
-    words = int(float(seg.get("minutes") or 1.5) * b["wpm"])
+    # word budget at the voices' REAL speed (TTS_WPM incl. breaths), not the band's slower target wpm: sized with
+    # the band's wpm, scripts rendered at ~55% of their target length
+    words = int(float(seg.get("minutes") or 1.5) * WRITE_WPM)
     system = ("You write the spoken script for a gentle, funny, educational kids show. Every line is spoken aloud "
               "by a character to a child watching. Reply with JSON only.")
     kind = seg["kind"]
@@ -262,11 +264,45 @@ def write_episode(category_id: str, topic: str, band_id: str, minutes: float, la
                          "scenes": scenes})
         tail = [s["text"] for s in scenes]
         log(f"Wrote segment '{seg.get('title')}' ({len(scenes)} lines)")
+    _top_up(segments, plan, cat, band_id, lang, float(minutes or 12), source, log)
     return {"title_idea": plan.get("title_idea") or topic, "summary": plan.get("summary", ""),
             "key_words": [str(k) for k in plan.get("key_words", [])][:6], "lesson": plan.get("lesson", ""),
             "topic": topic, "category": cat["id"], "age_band": band_id, "language": lang, "segments": segments,
             "outline": plan["segments"], "writer": "ai", "characters": plan["characters"],
             **({"source": {k: v for k, v in source.items() if k != "text"}} if source else {})}
+
+
+WRITE_WPM = 175        # words to ask for per minute: the voices speak ~190 wpm, plus breaths and answer pauses
+FIXED_KINDS = ("hello", "goodbye", "song", "recap")   # these have a set length; the rest can grow
+
+
+def _top_up(segments: list[dict], plan: dict, cat: dict, band_id: str, lang: str, minutes: float,
+            source: dict | None, log=print) -> None:
+    """Models write fewer words than asked. If the script times out under 85% of the target, rewrite the two
+    biggest teaching/story segments longer (once), so the episode lands inside the QA length gate."""
+    target = minutes * 60
+    est = template_seconds(segments, band_id)
+    if est >= .85 * target:
+        return
+    ratio = min(2.2, target / max(1.0, est) * 1.05)
+    outl = plan["segments"]
+    order = sorted((i for i, s in enumerate(segments) if s["kind"] not in FIXED_KINDS),
+                   key=lambda i: -sum(len(sc["text"].split()) for sc in segments[i]["scenes"]))[:2]
+    for i in order:
+        seg = {**outl[i], "minutes": float(outl[i].get("minutes") or 1.5) * ratio}
+        tail = [s["text"] for s in segments[i - 1]["scenes"]] if i else []
+        try:
+            scenes = write_segment(seg, plan, cat, band_id, tail, lang, source=source,
+                                   fix_notes="TOO SHORT: make this segment about twice as long - one more question for "
+                                             "the child, one more example or game step, same story and characters.")
+        except Exception as e:  # noqa: BLE001  (a top-up is a bonus, never a failure)
+            log(f"Could not lengthen '{segments[i]['title']}': {e}")
+            continue
+        old = len(segments[i]["scenes"])
+        if len(scenes) > old:
+            segments[i]["scenes"] = scenes
+            log(f"Lengthened '{segments[i]['title']}' ({old} -> {len(scenes)} lines)")
+    log(f"Length check: {est / 60:.1f} -> {template_seconds(segments, band_id) / 60:.1f} min (target {minutes:.0f})")
 
 
 def rewrite_segments(script: dict, notes: dict[int, str], log=print) -> dict:
