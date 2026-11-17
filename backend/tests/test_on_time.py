@@ -47,3 +47,11 @@ def test_bedtime_episodes_take_the_last_slot_of_the_day():
     s = app_settings()
     at = pipeline.slot_for({"category": "bedtime"})
     assert datetime.fromisoformat(at).astimezone(ZoneInfo(s["timezone"])).strftime("%H:%M") == max(s["post_times"])
+
+
+def test_shorts_never_share_a_time():
+    db = get_db()
+    at = datetime(2030, 1, 1, 23, 0, tzinfo=timezone.utc)
+    db.insert("episodes", {"kind": "short", "status": "approved", "topic": "A", "publish_at": at.isoformat(timespec="seconds")})
+    nxt = pipeline.short_slot(at)
+    assert nxt.startswith("2030-01-01T23:30")

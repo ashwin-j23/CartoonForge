@@ -463,6 +463,17 @@ def publish_due() -> list[str]:
 
 
 # ---------------------------------------------------------------- growth: shorts, compilations, editions
+def short_slot(at: datetime) -> str:
+    """`at`, or the next half hour after it that no other video (Short or episode) already uses."""
+    db = get_db()
+    used = {(e.get("publish_at") or "")[:16] for e in db.query("episodes", in_={"status": ["approved", "publishing"]})}
+    used |= {(e.get("published_at") or "")[:16] for e in db.query("episodes", eq={"status": "published"}, limit=200)}
+    at = at.astimezone(timezone.utc).replace(second=0, microsecond=0)
+    while at.isoformat(timespec="seconds")[:16] in used:
+        at += timedelta(minutes=30)
+    return at.isoformat(timespec="seconds")
+
+
 def make_short(parent_id: str) -> dict:
     """The episode's song (or its liveliest segment) as a vertical Short that links viewers to the channel."""
     from .render import episode as epr
@@ -498,9 +509,8 @@ def make_short(parent_id: str) -> dict:
             "qa": {"ok": True, "checks": [{"name": "Cut from approved episode", "ok": True, "detail": parent_id}]}})
         log(f"Short cut from '{p['topic']}' ({end - start:.0f}s)", ep=ep["id"])
         if app_settings().get("autopilot") or p.get("status") in ("published", "approved"):
-            ep = db.update("episodes", ep["id"], {"status": "approved",
-                                                  "publish_at": (max(datetime.now(timezone.utc), _parse(p.get("publish_at")) or datetime.now(timezone.utc))
-                                                                 + timedelta(hours=26)).isoformat(timespec="seconds")})
+            at = max(datetime.now(timezone.utc), _parse(p.get("publish_at")) or datetime.now(timezone.utc)) + timedelta(hours=26)
+            ep = db.update("episodes", ep["id"], {"status": "approved", "publish_at": short_slot(at)})
         return ep
     finally:
         shutil.rmtree(work, ignore_errors=True)
