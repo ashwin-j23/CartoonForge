@@ -368,6 +368,15 @@ def approve(eid: str, publish_at: str | None) -> dict:
     return ep
 
 
+BINGE = {   # every video also lands in one of these, so a child who finishes one gets the next on autoplay
+    "episode": ("🐰 All Hoppy Hop Hop Episodes | Songs, Stories & Learning for Kids",
+                "Every Hoppy Hop Hop cartoon in one place: songs, bedtime stories, counting, colours, animals and more "
+                "for toddlers and preschoolers. Press play and let Hoppy keep the fun going!"),
+    "short": ("🎵 Hoppy Hop Hop Shorts | Quick Sing-Alongs for Kids",
+              "Short, happy sing-along clips from Hoppy Hop Hop for toddlers and preschoolers."),
+}
+
+
 def publish(eid: str, force: bool = False) -> dict:
     db = get_db()
     s = app_settings()
@@ -402,12 +411,16 @@ def publish(eid: str, force: bool = False) -> dict:
         ep = db.update("episodes", eid, {"status": "published", "youtube": res, "error": None,
                                          "published_at": slot.isoformat(timespec="seconds") if when else now_iso()})
         log(f"Uploaded; YouTube makes it public at {when}: {res['url']}" if when else f"Published on YouTube: {res['url']}", ep=eid)
-        if s.get("series_playlists", True) and meta.get("playlist") and ep.get("kind") != "short":
-            try:
-                pid = youtube.ensure_playlist(meta["playlist"], f"{meta['playlist']} — every episode in order.", rt)
-                youtube.add_to_playlist(pid, res["id"], rt)
-            except Exception as e:  # noqa: BLE001
-                log(f"Playlist add failed: {e}", "warn", eid)
+        if s.get("series_playlists", True):
+            # the series playlist + one binge playlist (all episodes / all Shorts): autoplay keeps kids watching
+            lists = [(meta["playlist"], f"{meta['playlist']} — every episode in order.")] \
+                if meta.get("playlist") and ep.get("kind") != "short" else []
+            lists.append(BINGE["short" if ep.get("kind") == "short" else "episode"])
+            for title, about in lists:
+                try:
+                    youtube.add_to_playlist(youtube.ensure_playlist(title, about, rt), res["id"], rt)
+                except Exception as e:  # noqa: BLE001
+                    log(f"Playlist add failed ({title}): {e}", "warn", eid)
         if ep.get("kind", "episode") == "episode" and s.get("shorts_from_episodes", True):
             try:
                 make_short(eid)
