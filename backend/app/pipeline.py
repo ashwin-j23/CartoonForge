@@ -694,7 +694,8 @@ def _keep_full():
     if room and s.get("book_series") and has_ai():
         from .kids import series
         book_want = min(want, int(s.get("book_series_per_day", 1)) * 2)
-        for _ in range(min(room, max(0, book_want - series.pending_count(pending)))):
+        books = max(1, room // 2)              # the book series never takes every new slot: keep the topic mix
+        for _ in range(min(books, max(0, book_want - series.pending_count(pending)))):
             try:
                 series.plan_one()
                 room -= 1
