@@ -870,6 +870,18 @@ def _sched_state(r: dict, now: str) -> tuple[str, str]:
     return ("late" if (r.get("error") or (at and at < now)) else "waiting"), at
 
 
+@app.get("/api/storage", dependencies=[Depends(auth)])
+def storage_usage():
+    from . import janitor
+    return {**janitor.usage(), "plan": janitor.cleanup(dry=True)}
+
+
+@app.post("/api/storage/cleanup", dependencies=[Depends(auth)])
+def storage_cleanup():
+    from . import janitor
+    return janitor.cleanup()
+
+
 @app.get("/api/calendar", dependencies=[Depends(auth)])
 def calendar():
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -882,7 +894,12 @@ def calendar():
                           "state": state, "publish_at": at, "kind": r.get("kind", "episode"),
                           "url": (r.get("youtube") or {}).get("url"), "thumb_url": r.get("thumb_url"),
                           "error": (r.get("error") or "")[:200] if state == "late" else ""})
-    return {"scheduled": sched, "world_days": planner.upcoming(60), "slots": pipeline.free_slots(8), "now": now}
+    live = [x for x in sched if x["state"] == "live"]
+    totals = {"episodes": sum(1 for x in live if x["kind"] != "short"), "shorts": sum(1 for x in live if x["kind"] == "short"),
+              "uploaded": sum(1 for x in sched if x["state"] == "uploaded"),
+              "waiting": sum(1 for x in sched if x["state"] in ("waiting", "uploading", "late"))}
+    return {"scheduled": sched, "world_days": planner.upcoming(60), "slots": pipeline.free_slots(8), "now": now,
+            "totals": totals, "storage": get_db().get_setting("storage_usage")}
 
 
 @app.get("/api/analytics", dependencies=[Depends(auth)])

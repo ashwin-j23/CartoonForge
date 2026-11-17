@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../components/icons'
-import { Empty, fmtDate, PageHead, Skeleton, until, useApi, useCategoryMap } from '../components/ui'
+import { post } from '../api'
+import { ago, Empty, fmtDate, PageHead, Progress, Skeleton, until, useAction, useApi, useCategoryMap } from '../components/ui'
 
 /** Where every video stands, one colour per state (the server decides the state from YouTube's real status). */
 export const STATES = {
@@ -57,7 +58,8 @@ function Row({ it }) {
 }
 
 export default function Calendar() {
-  const { data, loading } = useApi('/calendar', { ms: 30000 })
+  const { data, loading, reload } = useApi('/calendar', { ms: 30000 })
+  const [busy, run] = useAction()
   const [, catMap] = useCategoryMap()
   const [view, setView] = useState('list')
   const [only, setOnly] = useState('')
@@ -191,6 +193,37 @@ export default function Calendar() {
         </div>
 
         <aside className="stack">
+          {data?.totals && (
+            <div className="card">
+              <h3><Icon name="chart" size={16} />Published so far</h3>
+              <div className="sched-totals">
+                <div><b>{data.totals.episodes}</b><span>episodes live</span></div>
+                <div><b>{data.totals.shorts}</b><span>Shorts live</span></div>
+                <div><b>{data.totals.uploaded}</b><span>uploaded, going live</span></div>
+                <div><b>{data.totals.waiting}</b><span>not uploaded yet</span></div>
+              </div>
+            </div>
+          )}
+          <div className="card">
+            <h3><Icon name="box" size={16} />Storage</h3>
+            {data?.storage ? (() => {
+              const st = data.storage
+              const pct = st.pct ?? 0
+              return <>
+                <Progress pct={Math.min(100, pct)} tone={pct >= 100 ? 'red' : pct >= 75 ? 'amber' : 'green'}
+                  label={`${Math.round(st.used_mb)} of ${st.limit_mb} MB`} />
+                <p className="muted tiny" style={{ marginTop: 8 }}>
+                  {pct >= 100 ? 'Over the limit: it shrinks as waiting episodes are uploaded (their full copy then lives on YouTube). '
+                    : pct >= 75 ? 'Nearly full: new episodes pause until some are published. ' : 'Healthy. '}
+                  Old renders are removed automatically. Checked {ago(st.at)}.
+                </p>
+              </>
+            })() : <p className="muted small">Not measured yet: it's checked after each upload and once a day.</p>}
+            <button className="btn sm" style={{ marginTop: 8 }} disabled={busy === 'clean'}
+              onClick={async () => { const r = await run('clean', () => post('/storage/cleanup'), (x) => `Freed ${Math.round(x.freed_mb)} MB`); if (r) reload(true) }}>
+              <Icon name="trash" size={14} />{busy === 'clean' ? 'Cleaning…' : 'Clean up now'}
+            </button>
+          </div>
           <div className="card">
             <h3><Icon name="info" size={16} />How publishing works</h3>
             <ol className="sched-how">

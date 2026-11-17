@@ -206,7 +206,14 @@ def render(eid: str) -> dict:
                  "song_regions": out["song_regions"], "meta": meta, "qa": qa, "engines": out["engines"],
                  "ai_video": ai_video, "rendered_style": rs["_style"], "rendered_palette": rs["_palette"],
                  "status": "review", "progress": {"stage": "review", "pct": 100}, "rendered_at": now_iso()}
+        old = [u for u in (ep.get("video_url"), ep.get("thumb_url")) if u and u not in (video_url, thumb_url)]
         ep = db.update("episodes", eid, patch)
+        if old:
+            try:                                   # the replaced render is never used again: free its space now
+                from . import janitor
+                storage.remove([k for k in map(janitor.key_of, old) if k])
+            except Exception as e:  # noqa: BLE001
+                log(f"Old render not removed (the daily cleanup will retry): {e}", "warn", eid)
         log(f"Rendered {out['duration'] / 60:.1f} min ({'all checks passed' if qa['ok'] else 'QA issues'})", ep=eid)
         if not ep.get("edition_of") and has_ai():
             for lang in s.get("editions") or []:
@@ -314,7 +321,11 @@ def free_slots(n: int = 6) -> list[str]:
     days = set(s.get("post_days") or range(7))
     times = s.get("post_times") or [s.get("post_time") or "07:30"]
     times = sorted(times)[: max(1, int(s.get("episodes_per_day", len(times))))]
-    taken = {(e.get("publish_at") or "")[:16] for e in get_db().query("episodes", in_={"status": ["approved", "publishing"]})}
+    db = get_db()
+    taken = {(e.get("publish_at") or "")[:16] for e in db.query("episodes", in_={"status": ["approved", "publishing"]})}
+    soon = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    taken |= {(e.get("published_at") or "")[:16] for e in db.query("episodes", eq={"status": "published"}, limit=200)
+              if e.get("kind", "episode") == "episode" and (e.get("published_at") or "") > soon}   # uploaded, goes live later
     out, now = [], datetime.now(tz)
     for i in range(0, 120):
         base = now + timedelta(days=i)
@@ -336,7 +347,7 @@ def free_slots(n: int = 6) -> list[str]:
 def slot_for(ep: dict) -> str:
     """Next free slot; bedtime episodes take the day's last posting time (closest to bedtime)."""
     slots = free_slots(9)
-    if ep.get("category") == "bedtime" or (ep.get("meta") or {}).get("mood") == "bedtime":
+    if ep.get("category") == "bedtime" or "bedtime" in str((ep.get("meta") or {}).get("title", "")).lower():
         s = app_settings()
         tz = ZoneInfo(s.get("timezone") or "UTC")
         last = max(s.get("post_times") or ["16:00"])
@@ -442,6 +453,12 @@ def publish_due() -> list[str]:
         publish(ep["id"])
         out.append(ep["id"])
         per_day[day] = per_day.get(day, 0) + 1
+    if out:
+        try:                                   # uploaded videos no longer need their full copy here
+            from . import janitor
+            janitor.cleanup()
+        except Exception as e:  # noqa: BLE001
+            log(f"Storage cleanup skipped: {e}", "warn")
     return out
 
 
@@ -496,7 +513,7 @@ def make_compilation(minutes: int | None = None) -> dict:
     target = (minutes or int(s.get("compilation_minutes", 45))) * 60
     db = get_db()
     eps = [e for e in db.query("episodes", eq={"status": "published"}, limit=200)
-           if e.get("kind", "episode") == "episode" and e.get("video_url")]
+           if e.get("kind", "episode") == "episode" and e.get("video_url") and not e.get("archived")]
     if len(eps) < 2:
         raise ValueError("Need at least 2 published episodes for a compilation")
     eps.sort(key=lambda e: ((e.get("stats") or {}).get("avg_pct", 0), (e.get("stats") or {}).get("views", 0)), reverse=True)
@@ -633,6 +650,15 @@ def _keep_full():
     if not has_ai():
         want = 1                      # without an AI writer every plan is the same demo: keep just one, don't churn
     room = min(3, max(0, want - len(pending)))                 # at most 3 new plans per heartbeat
+    if room:
+        try:                                   # every waiting episode holds its full video: don't overfill storage
+            from . import janitor
+            u = janitor.usage()
+            if u["pct"] is not None and u["pct"] >= 75:
+                log(f"Storage {u['used_mb']:.0f} of {u['limit_mb']} MB: no new episodes until some are published", "warn")
+                room = 0
+        except Exception:  # noqa: BLE001
+            pass
     if room and s.get("book_series") and has_ai():
         from .kids import series
         book_want = min(want, int(s.get("book_series_per_day", 1)) * 2)
@@ -699,6 +725,11 @@ def tick(render_work: bool = True, budget_s: int = 2700) -> dict:
                 out["timezone"] = growth.tune_timezone()
             except Exception as e:  # noqa: BLE001
                 out["timezone"] = f"skipped: {str(e)[:120]}"
+            try:
+                from . import janitor
+                out["storage"] = janitor.cleanup()
+            except Exception as e:  # noqa: BLE001
+                out["storage"] = f"skipped: {str(e)[:120]}"
             try:
                 db.prune()
             except Exception:  # noqa: BLE001

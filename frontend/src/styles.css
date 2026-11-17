@@ -1018,6 +1018,10 @@ a.att-item:hover { border-color: var(--border-strong); background: var(--surface
 .sched-kind.ep { background: var(--surface-3); color: var(--text-2); }
 .sched-err { color: var(--red-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
 .sched-noyt { font-size: var(--fs-xs); color: var(--text-3); flex: none; }
+.sched-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.sched-totals div { display: flex; flex-direction: column; padding: 10px; border-radius: var(--r); background: var(--surface-2); }
+.sched-totals b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.sched-totals span { font-size: var(--fs-xs); color: var(--text-3); }
 .sched-how { margin: 8px 0 6px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: var(--fs-sm); color: var(--text-2); }
 .sched-how li { display: flex; align-items: flex-start; gap: 8px; }
 @media (max-width: 1100px) { .sched-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

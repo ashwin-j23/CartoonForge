@@ -159,7 +159,7 @@ def _auto_workers() -> int:
 
 RENDER_WORKERS = env_int("RENDER_WORKERS", 0)       # 0 = automatic (decided at render time from free memory)
 X264_PRESET = env("X264_PRESET", "faster")
-X264_CRF = env_int("X264_CRF", 18)                 # 18 = visually lossless for flat cartoon colours
+X264_CRF = env_int("X264_CRF", 21)                 # clean for flat 2D colours (YouTube re-encodes anyway); ~1/3 smaller than 18
 
 SECRET_KEYS = [
     "GEMINI_API_KEY", "GROQ_API_KEY", "NVIDIA_API_KEY", "OPENROUTER_API_KEY", "CEREBRAS_API_KEY",
