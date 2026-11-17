@@ -193,10 +193,11 @@ def _start():
 def _summary(e: dict) -> dict:
     m = e.get("meta") or {}
     return {k: e.get(k) for k in ("id", "created_at", "status", "category", "topic", "age_band", "language", "duration",
-                                   "thumb_url", "video_url", "publish_at", "youtube", "progress", "error", "kind",
+                                   "thumb_url", "video_url", "publish_at", "published_at", "youtube", "progress", "error", "kind",
                                    "parent_id", "edition_of", "art_style", "animation", "rendered_style", "palette", "rendered_palette")} | {
         "title": m.get("title") or e.get("topic"), "score": (e.get("critic") or {}).get("score"),
-        "kind": e.get("kind", "episode")}
+        "kind": e.get("kind", "episode"), "views": (e.get("stats") or {}).get("views"),
+        "likes": (e.get("stats") or {}).get("likes")}
 
 
 def _get(eid: str) -> dict:
@@ -893,6 +894,8 @@ def calendar():
             sched.append({"id": r["id"], "title": (r.get("meta") or {}).get("title", r["topic"]), "status": r["status"],
                           "state": state, "publish_at": at, "kind": r.get("kind", "episode"),
                           "url": (r.get("youtube") or {}).get("url"), "thumb_url": r.get("thumb_url"),
+                          "duration": r.get("duration"), "category": r.get("category"),
+                          "views": (r.get("stats") or {}).get("views"),
                           "error": (r.get("error") or "")[:200] if state == "late" else ""})
     live = [x for x in sched if x["state"] == "live"]
     totals = {"episodes": sum(1 for x in live if x["kind"] != "short"), "shorts": sum(1 for x in live if x["kind"] == "short"),

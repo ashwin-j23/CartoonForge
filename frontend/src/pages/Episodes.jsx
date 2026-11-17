@@ -1,163 +1,295 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { post } from '../api'
-import { EpisodeCard, KindBadge, MiniCard, Thumb } from '../components/EpisodeCard'
+import { Thumb } from '../components/EpisodeCard'
 import Icon from '../components/icons'
-import { AnimationBadge, StyleBadge, useStyles } from '../components/looks'
+import { goLiveAt, StageChip, STAGES, stageOf } from '../components/stage'
 import {
-  ago, Empty, fmtDur, isLive, PageHead, ScoreBadge, Seg, Skeleton, SkeletonCards, shownStatus, STATUS, STATUS_ORDER, StatusPill, useAction, useApi, useCategoryMap,
+  ago, Empty, fmtDate, fmtDur, fmtNum, isLive, PageHead, Progress, ScoreBadge, Seg, SkeletonCards, until, useAction, useApi, useCategoryMap,
 } from '../components/ui'
 
-const BOARD = [
-  ['Writing', ['planned', 'writing', 'scripted'], 'blue'],
-  ['Rendering', ['rendering'], 'violet'],
-  ['Review', ['review'], 'amber'],
-  ['Scheduled', ['approved', 'publishing'], 'green'],
-  ['Upcoming on YouTube', ['upcoming'], 'blue'],
-  ['Live on YouTube', ['published'], 'pink'],
-  ['Failed', ['failed', 'rejected'], 'red'],
+// tabs across the top: what each one holds, in pipeline order
+const TABS = [
+  ['all', 'All', null],
+  ['production', 'In production', ['production']],
+  ['review', 'Review', ['review']],
+  ['scheduled', 'Scheduled', ['scheduled', 'uploading', 'upcoming']],
+  ['live', 'Live', ['live']],
+  ['failed', 'Needs attention', ['failed']],
+  ['rejected', 'Rejected', ['rejected']],
 ]
+// sections on the "All" tab, in the order they matter to you
+const SECTIONS = [
+  ['review', 'Needs your review', 'Watch it, read the scorecard, then approve or reject.', ['review']],
+  ['failed', 'Needs attention', 'Something went wrong. Retry from here or open it.', ['failed']],
+  ['production', 'In production', 'Being written and rendered right now.', ['production']],
+  ['scheduled', 'Going live next', 'In order. Uploaded videos go public by themselves at their time.', ['uploading', 'upcoming', 'scheduled']],
+  ['live', 'Live on YouTube', 'Public now, newest first.', ['live']],
+]
+// old links (?status=…) from Home and elsewhere
+const LEGACY = { review: 'review', failed: 'failed', rejected: 'rejected', published: 'live', approved: 'scheduled', publishing: 'scheduled',
+  planned: 'production', writing: 'production', scripted: 'production', rendering: 'production' }
 const KINDS = [['', 'All'], ['episode', 'Episodes'], ['short', 'Shorts'], ['compilation', 'Compilations']]
+const SORTS = [['smart', 'Best order'], ['newest', 'Newest'], ['views', 'Most views']]
+const LIVE_PREVIEW = 8
+const SOON = ['scheduled', 'uploading', 'upcoming']
+
+const shortWhen = (iso) => fmtDate(iso, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+const ts = (iso) => new Date(iso || 0).getTime()
+
+function smartSort(list) {
+  return [...list].sort((a, b) => {
+    if (a._stage === 'live' && b._stage === 'live') return ts(goLiveAt(b)) - ts(goLiveAt(a))   // newest live first
+    if (SOON.includes(a._stage) && SOON.includes(b._stage)) return ts(goLiveAt(a)) - ts(goLiveAt(b))   // soonest first
+    return ts(b.created_at) - ts(a.created_at)
+  })
+}
 
 export default function Episodes() {
   const [params, setParams] = useSearchParams()
-  const status = params.get('status') || ''
+  const tab = params.get('tab') || LEGACY[params.get('status')] || 'all'
   const kind = params.get('kind') || ''
-  const view = params.get('view') || (status ? 'grid' : 'board')
+  const view = params.get('view') === 'list' ? 'list' : 'cards'
+  const sort = params.get('sort') || 'smart'
   const [q, setQ] = useState('')
+  const [showAllLive, setShowAllLive] = useState(false)
   const [busy, run] = useAction()
   const { data, loading, reload } = useApi('/episodes', { ms: (d) => (Array.isArray(d) && d.some(isLive) ? 5000 : 30000) })
   const [, catMap] = useCategoryMap()
   const bar = useApi('/settings', { quiet: true }).data?.quality_bar
-  const { map: styleMap } = useStyles()
 
-  const setParam = (k, v) => { const n = new URLSearchParams(params); if (v) n.set(k, v); else n.delete(k); setParams(n, { replace: true }) }
+  const setParam = (k, v) => {
+    const n = new URLSearchParams(params)
+    n.delete('status')
+    if (v) n.set(k, v); else n.delete(k)
+    setParams(n, { replace: true })
+  }
 
-  const all = Array.isArray(data) ? data : []
-  const counts = useMemo(() => {
-    const c = {}
-    for (const e of all) if (!kind || (e.kind || 'episode') === kind) c[shownStatus(e)] = (c[shownStatus(e)] || 0) + 1
-    return c
-  }, [all, kind])
+  const all = useMemo(() => (Array.isArray(data) ? data : []).map((e) => ({ ...e, _stage: stageOf(e) })), [data])
   const base = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return all.filter((e) => (!kind || (e.kind || 'episode') === kind)
       && (!needle || [e.title, e.topic, e.category, String(e.id)].some((x) => x && String(x).toLowerCase().includes(needle))))
   }, [all, q, kind])
-  const list = status ? base.filter((e) => shownStatus(e) === status) : base
-  const reviewQ = !status ? base.filter((e) => e.status === 'review') : []
-  const rest = !status ? base.filter((e) => e.status !== 'review') : list
-  const total = Object.values(counts).reduce((a, b) => a + b, 0)
+  const counts = useMemo(() => {
+    const c = { all: base.length }
+    for (const [id, , stages] of TABS) if (stages) c[id] = base.filter((e) => stages.includes(e._stage)).length
+    return c
+  }, [base])
+  const sorted = (list) => (sort === 'views' ? [...list].sort((a, b) => (b.views || 0) - (a.views || 0))
+    : sort === 'newest' ? [...list].sort((a, b) => ts(b.created_at) - ts(a.created_at)) : smartSort(list))
+
   const retry = async (ep, how) => {
-    const r = await run(`retry-${ep.id}`, () => post(`/episodes/${ep.id}/${how}`),
-      how === 'render' ? 'Rendering again' : 'Writing it again')
+    const r = await run(`retry-${ep.id}`, () => post(`/episodes/${ep.id}/${how}`), how === 'render' ? 'Rendering again' : 'Writing it again')
     if (r) reload()
   }
+  const live = all.filter((e) => e._stage === 'live')
+  const liveEps = live.filter((e) => (e.kind || 'episode') !== 'short').length
+  const totalViews = live.reduce((n, e) => n + (e.views || 0), 0)
+  const next = all.filter((e) => SOON.includes(e._stage) && goLiveAt(e)).sort((a, b) => ts(goLiveAt(a)) - ts(goLiveAt(b)))[0]
+  const waiting = all.filter((e) => SOON.includes(e._stage)).length
+  const review = all.filter((e) => e._stage === 'review').length
+
+  const tabDef = TABS.find(([id]) => id === tab) || TABS[0]
+  const visibleTabs = TABS.filter(([id]) => id === 'all' || counts[id] || id === tab || ['review', 'scheduled', 'live'].includes(id))
+  const cardProps = { catMap, bar, onRetry: retry, busy }
 
   return (
-    <div className={`page ${view === 'board' ? 'wide' : ''}`}>
-      <PageHead title="Episodes" sub="Everything the studio has written, rendered or published. Review queue first.">
+    <div className="page">
+      <PageHead title="Episodes" sub="Everything the studio has made, from first draft to live on YouTube.">
+        <Link to="/calendar" className="btn"><Icon name="calendar" size={16} />Schedule</Link>
         <Link to="/create" className="btn primary"><Icon name="plus" size={16} />New episode</Link>
       </PageHead>
 
-      <div className="toolbar">
+      {data && (
+        <div className="eps-hero">
+          <button type="button" className="eps-hero-item st-live" onClick={() => setParam('tab', 'live')}>
+            <span className="eps-hero-ico"><Icon name="checkCircle" size={18} /></span>
+            <span><b>{live.length}</b><small>live · {liveEps} episodes, {live.length - liveEps} Shorts</small></span>
+          </button>
+          <button type="button" className="eps-hero-item st-live" onClick={() => setParams({ tab: 'live', sort: 'views', ...(kind ? { kind } : {}) }, { replace: true })}>
+            <span className="eps-hero-ico"><Icon name="eye" size={18} /></span>
+            <span><b>{fmtNum(totalViews)}</b><small>views on live videos</small></span>
+          </button>
+          <button type="button" className="eps-hero-item st-scheduled" onClick={() => setParam('tab', 'scheduled')}>
+            <span className="eps-hero-ico"><Icon name="clock" size={18} /></span>
+            <span>{next ? <><b>in {until(goLiveAt(next))}</b><small className="ellipsis" title={next.title}>{waiting} waiting · next: {next.title}</small></>
+              : <><b>—</b><small>nothing waiting to go live</small></>}</span>
+          </button>
+          <button type="button" className={`eps-hero-item ${review ? 'st-review' : 'st-rejected'}`} onClick={() => setParam('tab', 'review')}>
+            <span className="eps-hero-ico"><Icon name="eye" size={18} /></span>
+            <span><b>{review}</b><small>{review ? 'waiting for your review' : 'nothing to review'}</small></span>
+          </button>
+        </div>
+      )}
+
+      <nav className="eps-tabs" aria-label="Filter by stage">
+        {visibleTabs.map(([id, label, stages]) => (
+          <button key={id} type="button" className={`eps-tab ${stages ? `st-${id === 'scheduled' ? 'scheduled' : stages[0]}` : ''} ${tab === id ? 'on' : ''}`}
+            aria-pressed={tab === id} onClick={() => { setParam('tab', id === 'all' ? '' : id); setShowAllLive(false) }}>
+            {stages && <span className="eps-tab-dot" />}{label}<span className="eps-tab-n">{counts[id] || 0}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="eps-toolbar">
         <label className="search-box">
           <Icon name="search" size={16} />
           <input type="search" placeholder="Search title, topic or #id" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search episodes" />
         </label>
         <Seg value={kind} onChange={(v) => setParam('kind', v)} size="sm" options={KINDS} label="Kind" />
         <div className="spacer" />
-        <Seg value={view} onChange={(v) => setParam('view', v)} size="sm" label="View"
-          options={[['board', 'Board', 'board'], ['grid', 'Grid', 'grid'], ['list', 'List', 'list']]} />
+        <label className="eps-sort">
+          <span>Sort</span>
+          <select value={sort} onChange={(e) => setParam('sort', e.target.value === 'smart' ? '' : e.target.value)}>
+            {SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <Seg value={view} onChange={(v) => setParam('view', v === 'cards' ? '' : v)} size="sm" label="View"
+          options={[['cards', 'Cards', 'grid'], ['list', 'List', 'list']]} />
       </div>
 
-      {view !== 'board' && (
-        <div className="chips filter" role="toolbar" aria-label="Filter by status">
-          <button className={`chip ${!status ? 'on' : ''}`} onClick={() => setParam('status', '')}>All<span className="chip-n">{total}</span></button>
-          {STATUS_ORDER.filter((s) => counts[s] || s === status || s === 'review').map((s) => (
-            <button key={s} className={`chip ${status === s ? 'on' : ''}`} onClick={() => setParam('status', s)}>
-              <span className={`dot t-${STATUS[s].tone}`} />{STATUS[s].label}<span className="chip-n">{counts[s] || 0}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {loading && !data ? (view === 'board' ? <div className="board"><Skeleton h={320} count={5} r={12} /></div> : <SkeletonCards n={8} />) : base.length === 0 ? (
+      {loading && !data ? <SkeletonCards n={8} h={250} className="eps-grid" /> : base.length === 0 ? (
         <Empty icon="film" title={q ? 'Nothing matches your search' : 'No episodes yet'}
           action={<Link className="btn primary" to="/create"><Icon name="plus" size={16} />Create an episode</Link>}>
           {q ? 'Try a different word, or clear the search.' : 'They show up here as soon as the planner queues them.'}
         </Empty>
-      ) : view === 'board' ? (
-        <div className="board">
-          {BOARD.map(([title, sts, tone]) => {
-            const items = base.filter((e) => sts.includes(shownStatus(e)))
-            return (
-              <div className={`col t-${tone} ${items.length ? '' : 'is-empty'}`} key={title}>
-                <div className="col-head"><span className="col-dot" />{title}<span className="col-count">{items.length}</span></div>
-                <div className="col-body">
-                  {items.length === 0 && <div className="col-empty">Nothing here</div>}
-                  {items.slice(0, title === 'Live on YouTube' ? 12 : 50).map((e) => (
-                    <MiniCard key={e.id} ep={e} catEmoji={catMap[e.category]?.emoji} bar={bar}
-                      onRetry={title === 'Failed' ? retry : undefined} retrying={busy === `retry-${e.id}`} />
-                  ))}
-                  {title === 'Live on YouTube' && items.length > 12 && <button className="col-more" onClick={() => setParams({ view: 'grid', status: 'published' })}>+{items.length - 12} more</button>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : list.length === 0 ? (
-        <Empty icon="filter" title={`No ${STATUS[status]?.label.toLowerCase() || status} episodes`} action={<button className="btn" onClick={() => setParam('status', '')}>Show all</button>} />
-      ) : (
-        <>
-          {reviewQ.length > 0 && (
-            <section className="review-q">
-              <div className="section-title"><div><h2><Icon name="eye" size={18} />Review queue <span className="count-pill">{reviewQ.length}</span></h2><p className="muted small">Watch, read the scorecard, then approve or reject.</p></div></div>
-              <EpisodeList list={reviewQ} view={view} catMap={catMap} bar={bar} styleMap={styleMap} />
+      ) : tab === 'all' ? (
+        SECTIONS.map(([id, title, hint, stages]) => {
+          const full = sorted(base.filter((e) => stages.includes(e._stage)))
+          if (!full.length) return null
+          const more = id === 'live' && !showAllLive && full.length > LIVE_PREVIEW ? full.length - LIVE_PREVIEW : 0
+          const items = more ? full.slice(0, LIVE_PREVIEW) : full
+          return (
+            <section key={id} className={`eps-section st-${id}`}>
+              <header className="eps-section-head">
+                <h2><span className="eps-section-bar" />{title}<span className="eps-tab-n">{full.length}</span></h2>
+                <p>{hint}</p>
+              </header>
+              <Items list={items} view={view} {...cardProps} />
+              {more > 0 && <button className="btn ghost eps-more" onClick={() => setShowAllLive(true)}>Show {more} more live videos<Icon name="chevronDown" size={14} /></button>}
             </section>
-          )}
-          {rest.length > 0 && (
-            <section>
-              {reviewQ.length > 0 && <div className="section-title"><div><h2>Everything else</h2></div></div>}
-              <EpisodeList list={rest} view={view} catMap={catMap} bar={bar} styleMap={styleMap} />
-            </section>
-          )}
-        </>
-      )}
+          )
+        })
+      ) : (() => {
+        const items = sorted(base.filter((e) => tabDef[2].includes(e._stage)))
+        return items.length ? <Items list={items} view={view} {...cardProps} />
+          : <Empty compact icon="filter" title={`Nothing here right now (${STAGES[tabDef[2][0]]?.label || tabDef[1]})`}
+            action={<button className="btn" onClick={() => setParam('tab', '')}>Show everything</button>} />
+      })()}
     </div>
   )
 }
 
-function EpisodeList({ list, view, catMap, bar, styleMap }) {
-  if (view === 'grid') return <div className="grid cards">{list.map((e) => <EpisodeCard key={e.id} ep={e} cat={catMap[e.category]} bar={bar} />)}</div>
+function Items({ list, view, ...p }) {
+  if (view === 'list') {
+    return (
+      <div className="card flush eps-table" role="table">
+        <div className="eps-tr eps-th" role="row">
+          <span /><span>Video</span><span>Stage</span><span>Goes live / went live</span><span className="num">Views</span>
+        </div>
+        {list.map((e) => <Row key={e.id} ep={e} {...p} />)}
+      </div>
+    )
+  }
+  return <div className="eps-grid">{list.map((e) => <Card key={e.id} ep={e} {...p} />)}</div>
+}
+
+/** The line under the title, depending on where the video stands. */
+function Status({ ep, bar, onRetry, busy }) {
+  const st = ep._stage
+  const at = goLiveAt(ep)
+  if (st === 'live') {
+    return (
+      <div className="eps-status">
+        <span className="eps-views"><Icon name="eye" size={13} /><b>{fmtNum(ep.views || 0)}</b> views</span>
+        {ep.likes ? <span className="eps-views"><Icon name="heart" size={13} /><b>{fmtNum(ep.likes)}</b></span> : null}
+        {at && <span className="eps-faint">live {ago(at)}</span>}
+      </div>
+    )
+  }
+  if (st === 'upcoming' || st === 'scheduled') {
+    return (
+      <div className="eps-status">
+        <span className="eps-when"><Icon name="calendar" size={13} />{shortWhen(at)}</span>
+        <span className="eps-in">in {until(at)}</span>
+      </div>
+    )
+  }
+  if (st === 'uploading') return <div className="eps-status"><span className="eps-when"><span className="pulse-dot" />Sending to YouTube…</span></div>
+  if (st === 'production') {
+    const p = ep.progress
+    return p && p.pct != null && p.pct < 100
+      ? <Progress pct={p.pct} label={p.stage} tone="violet" />
+      : <div className="eps-status"><span className="eps-faint"><Icon name="clock" size={12} /> {ep.status === 'planned' ? 'Queued' : ep.status === 'scripted' ? 'Script ready, rendering next' : 'Working on it…'}</span></div>
+  }
+  if (st === 'review') {
+    return <div className="eps-status"><ScoreBadge score={ep.score} bar={bar} /><span className="eps-cta">Review now<Icon name="arrowRight" size={13} /></span></div>
+  }
+  if (st === 'failed') {
+    const renderFail = /^render/i.test(ep.error || '')
+    return (
+      <div className="eps-status col">
+        {ep.error && <span className="eps-err" title={ep.error}>{ep.error}</span>}
+        {onRetry && (
+          <button className="btn sm" disabled={busy === `retry-${ep.id}`}
+            onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); onRetry(ep, renderFail ? 'render' : 'rewrite') }}>
+            <Icon name="refresh" size={13} />{renderFail ? 'Render again' : 'Rewrite'}
+          </button>
+        )}
+      </div>
+    )
+  }
+  return <div className="eps-status"><span className="eps-faint">{ago(ep.created_at)}</span></div>
+}
+
+function Card({ ep, catMap, ...p }) {
+  const cat = catMap[ep.category]
   return (
-    <div className="card flush">
-      <ul className="ep-rows">
-        {list.map((e) => (
-          <li key={e.id}>
-            <Link to={`/episodes/${e.id}`} className="ep-row">
-              <Thumb ep={e} emoji={catMap[e.category]?.emoji} className="row-thumb" />
-              <span className="ep-row-main">
-                <b>{e.title || e.topic}</b>
-                <span className="ep-row-meta">
-                  <span>#{e.id}</span>
-                  {catMap[e.category] && <span>{catMap[e.category].emoji} {catMap[e.category].name}</span>}
-                  {e.age_band && <span>{e.age_band}</span>}
-                  {e.duration ? <span>{fmtDur(e.duration)}</span> : null}
-                  <span>{ago(e.created_at)}</span>
-                </span>
-              </span>
-              <span className="ep-row-badges">
-                <KindBadge kind={e.kind} />
-                {((e.art_style && e.art_style !== 'auto') || e.rendered_style) && <StyleBadge id={e.art_style} rendered={e.rendered_style} map={styleMap} size="sm" />}
-                {e.animation && e.animation !== 'code' && <AnimationBadge mode={e.animation} size="sm" />}
-                <ScoreBadge score={e.score} bar={bar} />
-                <StatusPill status={shownStatus(e)} small />
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <Link to={`/episodes/${ep.id}`} className={`eps-card st-${ep._stage}`}>
+      <div className="eps-media">
+        <Thumb ep={ep} emoji={cat?.emoji} />
+        <span className="eps-media-chip"><StageChip stage={ep._stage} solid /></span>
+        {ep.kind === 'short' && <span className="eps-kind"><Icon name="phone" size={11} />Short</span>}
+        {ep.kind === 'compilation' && <span className="eps-kind"><Icon name="layers" size={11} />Compilation</span>}
+        {ep.duration ? <span className="dur">{fmtDur(ep.duration)}</span> : null}
+        {ep.video_url && <span className="ep-play" aria-hidden="true"><Icon name="play" size={18} /></span>}
+      </div>
+      <div className="eps-body">
+        <h3 className="eps-title">{ep.title || ep.topic || `Episode #${ep.id}`}</h3>
+        <div className="eps-meta">
+          {cat && <span>{cat.emoji} {cat.name}</span>}
+          {ep.age_band && <span>Ages {ep.age_band}</span>}
+        </div>
+        <Status ep={ep} {...p} />
+      </div>
+    </Link>
+  )
+}
+
+function Row({ ep, catMap, bar }) {
+  const cat = catMap[ep.category]
+  const at = goLiveAt(ep)
+  const st = ep._stage
+  return (
+    <Link to={`/episodes/${ep.id}`} className={`eps-tr st-${st}`} role="row">
+      <span className="eps-row-thumb"><Thumb ep={ep} emoji={cat?.emoji} />{ep.duration ? <span className="dur">{fmtDur(ep.duration)}</span> : null}</span>
+      <span className="eps-row-main">
+        <b>{ep.title || ep.topic}</b>
+        <span className="eps-meta">
+          {ep.kind === 'short' ? <span className="eps-kind-inline">Short</span> : ep.kind === 'compilation' ? <span className="eps-kind-inline">Compilation</span> : null}
+          {cat && <span>{cat.emoji} {cat.name}</span>}
+          <span>#{ep.id}</span>
+        </span>
+      </span>
+      <span className="eps-row-stage"><StageChip stage={st} /></span>
+      <span className="eps-row-when">
+        {at && ['live', ...SOON].includes(st)
+          ? <>{shortWhen(at)}<small>{st === 'live' ? ago(at) : `in ${until(at)}`}</small></>
+          : st === 'failed' ? <small className="eps-err" title={ep.error}>{ep.error}</small>
+          : st === 'review' ? <ScoreBadge score={ep.score} bar={bar} /> : <small>{ago(ep.created_at)}</small>}
+      </span>
+      <span className="num">{st === 'live' ? <b>{fmtNum(ep.views || 0)}</b> : <span className="eps-faint">—</span>}</span>
+    </Link>
   )
 }
