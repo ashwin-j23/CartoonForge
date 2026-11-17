@@ -1495,7 +1495,10 @@ a.eps-tr:hover { background: var(--surface-2); }
   .eps-tr .num { display: none; }
 }
 @media (max-width: 560px) {
-  .eps-hero { grid-template-columns: 1fr; gap: 8px; }
+  .eps-hero { gap: 8px; }
+  .eps-hero-item { padding: 10px 12px; gap: 8px; }
+  .eps-hero-ico { display: none; }
+  .eps-hero-item b { font-size: 19px; }
   .eps-grid { grid-template-columns: 1fr; }
   .eps-tr { grid-template-columns: 72px minmax(0, 1fr); }
   .eps-row-thumb { width: 72px; }

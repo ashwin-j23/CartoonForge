@@ -131,7 +131,7 @@ export default function Calendar() {
     return Array.from({ length: 42 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d })
   }, [cursor])
   const move = (n) => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1))
-  const jump = (k) => { setView('agenda'); setOnly(''); setTimeout(() => dayRefs.current[k]?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40) }
+  const jump = (k) => { setView('agenda'); setOnly(''); setTimeout(() => (dayRefs.current[k] || dayRefs.current.live)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40) }
 
   const liveAll = items.filter((it) => it._stage === 'live')
   const liveShorts = liveAll.filter((it) => it.kind === 'short').length
@@ -222,7 +222,7 @@ export default function Calendar() {
               {!days.length && only !== 'live' && <Empty compact icon="calendar">{only ? 'Nothing in this state right now.' : 'Nothing waiting to go live.'}</Empty>}
 
               {live.length > 0 && (
-                <section className="sch-dayblock sch-livelist">
+                <section className="sch-dayblock sch-livelist" ref={(el) => { dayRefs.current.live = el }}>
                   <h3 className="sch-dayhead"><span>Already live</span><small>newest first</small><em>{live.length} videos</em></h3>
                   <ul className="sch-timeline">
                     {(allLive ? live : live.slice(0, LIVE_PREVIEW)).map((it) => <Item key={it.id} it={it} catMap={catMap} past />)}
