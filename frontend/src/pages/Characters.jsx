@@ -4,7 +4,7 @@ import { castImg, del, get, patch, post } from '../api'
 import Icon from '../components/icons'
 import { useStyles } from '../components/looks'
 import {
-  ago, Badge, Drawer, Empty, Field, Modal, PageHead, SafeImg, Seg, Skeleton, SkeletonCards, Spinner, StatusPill, Tabs,
+  ago, Badge, Drawer, Empty, Field, Modal, PageHead, SafeImg, Seg, Skeleton, SkeletonCards, Spinner, shownStatus, StatusPill, Tabs,
   titleCase, useAction, useApi, useStatic, useToast,
 } from '../components/ui'
 
@@ -320,7 +320,7 @@ function CharacterDrawer({ id, onClose, onChanged, onDeleted, readOnly, fallback
             {c.episodes_detail?.length ? (
               <ul className="mini-list">
                 {c.episodes_detail.map((e) => (
-                  <li key={e.id}><Link to={`/episodes/${e.id}`}>{e.title || `Episode #${e.id}`}</Link><StatusPill status={e.status} small /></li>
+                  <li key={e.id}><Link to={`/episodes/${e.id}`}>{e.title || `Episode #${e.id}`}</Link><StatusPill status={shownStatus(e)} small /></li>
                 ))}
               </ul>
             ) : <p className="muted small">{c.core ? 'Appears across the whole show.' : 'Not in any episode yet.'}</p>}

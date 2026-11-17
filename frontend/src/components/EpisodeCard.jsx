@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { mediaUrl } from '../api'
 import Icon from './icons'
 import { AnimationBadge } from './looks'
-import { ago, Badge, fmtDate, fmtDur, Progress, SafeImg, ScoreBadge, StatusPill } from './ui'
+import { ago, Badge, fmtDate, fmtDur, Progress, SafeImg, ScoreBadge, shownStatus, StatusPill } from './ui'
 
 export function Thumb({ ep, emoji, className = 'thumb' }) {
   return (
@@ -38,8 +38,8 @@ export function MiniCard({ ep, catEmoji, bar, onRetry, retrying }) {
         <div className="mini-meta">
           <KindBadge kind={ep.kind} />
           <ScoreBadge score={ep.score} bar={bar} />
-          {ep.publish_at && ['approved', 'publishing'].includes(ep.status)
-            ? <span className="muted tiny"><Icon name="calendar" size={12} /> {fmtDate(ep.publish_at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+          {ep.publish_at && ['approved', 'publishing', 'upcoming'].includes(shownStatus(ep))
+            ? <span className="muted tiny"><Icon name="calendar" size={12} /> {fmtDate(shownStatus(ep) === 'upcoming' ? ep.published_at : ep.publish_at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
             : <span className="muted tiny">{ago(ep.created_at)}</span>}
         </div>
         {LIVE.includes(ep.status) && p && p.pct != null && p.pct < 100
@@ -64,7 +64,7 @@ export function EpisodeCard({ ep, cat, bar }) {
     <Link to={`/episodes/${ep.id}`} className="ep-card">
       <div className="ep-thumb">
         <Thumb ep={ep} emoji={cat?.emoji} />
-        <span className="ep-status"><StatusPill status={ep.status} small /></span>
+        <span className="ep-status"><StatusPill status={shownStatus(ep)} small /></span>
         {ep.duration ? <span className="dur">{fmtDur(ep.duration)}</span> : null}
         {ep.video_url && <span className="ep-play" aria-hidden="true"><Icon name="play" size={18} /></span>}
       </div>

@@ -7,7 +7,7 @@ import { KindBadge } from '../components/EpisodeCard'
 import Icon from '../components/icons'
 import { AnimationBadge, AnimationPicker, EstimateBox, MODE_MAP, PaletteBadge, PalettePicker, StyleBadge, StylePicker, useAIVideo, usePalettes, useStyles } from '../components/looks'
 import {
-  ago, Badge, Empty, Field, fmtDate, fmtDur, fmtUsd, Modal, Progress, SafeImg, Seg, Skeleton, Spinner, StatusPill, Tabs, TagInput,
+  ago, Badge, Empty, Field, fmtDate, fmtDur, fmtUsd, Modal, Progress, SafeImg, Seg, Skeleton, Spinner, shownStatus, StatusPill, Tabs, TagInput,
   toLocalInput, useAction, useApi, useCategoryMap, useStatic, useToast,
 } from '../components/ui'
 
@@ -273,7 +273,7 @@ export default function EpisodeDetail() {
         <div className="detail-title">
           <h1>{title}</h1>
           <div className="head-meta">
-            <StatusPill status={ep.status} />
+            <StatusPill status={shownStatus(ep)} />
             <KindBadge kind={ep.kind} />
             {cat && <Badge>{cat.emoji} {cat.name}</Badge>}
             <Badge icon="smile">{band?.label || ep.age_band}</Badge>
@@ -310,7 +310,7 @@ export default function EpisodeDetail() {
           <Media ep={ep} seekRef={seekRef} />
 
           <section className="card actions-card">
-            <div className="card-head"><h3>Actions</h3>{ep.publish_at && <span className="muted small"><Icon name="calendar" size={13} /> {ep.status === 'published' ? 'Published' : 'Scheduled'} {fmtDate(ep.publish_at)}</span>}</div>
+            <div className="card-head"><h3>Actions</h3>{ep.publish_at && <span className="muted small"><Icon name="calendar" size={13} /> {shownStatus(ep) === 'published' ? 'Live since' : shownStatus(ep) === 'upcoming' ? 'Uploaded · goes public' : 'Scheduled'} {fmtDate(ep.status === 'published' ? ep.published_at || ep.publish_at : ep.publish_at)}</span>}</div>
             <div className="action-grid">
               <button className="btn" disabled={!can('restyle') || !ep.script || !!busy || live} onClick={() => setModal('restyle')}><Icon name="palette" size={15} />Restyle / re-render</button>
               <button className="btn" disabled={!can('render') || !!busy} onClick={() => act('render', () => post(`/episodes/${ep.id}/render`), 'Re-render queued')}>{busy === 'render' ? <Spinner size={14} /> : <Icon name="refresh" size={15} />}Re-render</button>
@@ -349,7 +349,7 @@ export default function EpisodeDetail() {
                   <li key={code}>
                     <b>{langs?.find((l) => l.code === code)?.name || code}</b>
                     <span className="row">
-                      <StatusPill status={e.status} small />
+                      <StatusPill status={shownStatus(e)} small />
                       {e.video_url && <a href={mediaUrl(e.video_url)} target="_blank" rel="noreferrer" className="link-sm">Video</a>}
                       {e.youtube?.url && <a href={e.youtube.url} target="_blank" rel="noreferrer" className="link-sm">YouTube</a>}
                     </span>

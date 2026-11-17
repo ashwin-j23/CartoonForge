@@ -146,11 +146,14 @@ export const STATUS = {
   review: { label: 'Needs review', icon: 'eye', tone: 'amber' },
   approved: { label: 'Scheduled', icon: 'calendar', tone: 'green' },
   publishing: { label: 'Publishing', icon: 'rocket', tone: 'green', live: true },
-  published: { label: 'Published', icon: 'star', tone: 'green' },
+  upcoming: { label: 'Upcoming on YouTube', icon: 'clock', tone: 'blue' },
+  published: { label: 'Live on YouTube', icon: 'star', tone: 'green' },
   failed: { label: 'Failed', icon: 'alertCircle', tone: 'red' },
   rejected: { label: 'Rejected', icon: 'ban', tone: 'neutral' },
 }
-export const STATUS_ORDER = ['review', 'failed', 'planned', 'writing', 'scripted', 'rendering', 'approved', 'publishing', 'published', 'rejected']
+export const STATUS_ORDER = ['review', 'failed', 'planned', 'writing', 'scripted', 'rendering', 'approved', 'publishing', 'upcoming', 'published', 'rejected']
+/** 'upcoming' = uploaded to YouTube but still private until its time; 'published' = public now. */
+export const shownStatus = (e) => (e?.status === 'published' && e.published_at && new Date(e.published_at) > new Date() ? 'upcoming' : e?.status)
 export const LIVE_STATUSES = new Set(['planned', 'writing', 'rendering', 'publishing'])
 export const isLive = (e) => !!e && (LIVE_STATUSES.has(e.status) || (e.progress && e.progress.pct != null && e.progress.pct < 100))
 

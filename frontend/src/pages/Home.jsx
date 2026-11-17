@@ -4,7 +4,7 @@ import AutomationCard from '../components/AutomationCard'
 import { EpisodeCard, MiniCard, Thumb } from '../components/EpisodeCard'
 import Icon from '../components/icons'
 import {
-  ago, Badge, Empty, fmtDate, fmtNum, isLive, SafeImg, Skeleton, Spinner, Stat, StatusPill, until, useAction, useApi, useCategoryMap,
+  ago, Badge, Empty, fmtDate, fmtNum, isLive, SafeImg, Skeleton, shownStatus, Spinner, Stat, StatusPill, until, useAction, useApi, useCategoryMap,
 } from '../components/ui'
 
 const PIPE = [
@@ -12,6 +12,7 @@ const PIPE = [
   ['Rendering', ['rendering'], 'violet'],
   ['Review', ['review'], 'amber'],
   ['Scheduled', ['approved', 'publishing'], 'green'],
+  ['Upcoming on YouTube', ['upcoming'], 'blue'],
 ]
 
 function greeting() {
@@ -48,8 +49,9 @@ export default function Home() {
   const ch = o?.channel
   const bar = settings?.quality_bar
   const review = list.filter((e) => e.status === 'review')
+  const upcoming = list.filter((e) => shownStatus(e) === 'upcoming').length
   const failed = list.filter((e) => e.status === 'failed')
-  const published = list.filter((e) => e.status === 'published').slice(0, 4)
+  const published = list.filter((e) => shownStatus(e) === 'published').slice(0, 4)
   const inProd = (counts.planned || 0) + (counts.writing || 0) + (counts.scripted || 0) + (counts.rendering || 0)
 
   const surprise = async () => {
@@ -111,7 +113,8 @@ export default function Home() {
           <>
             <Stat icon="eye" tone="amber" label="Waiting for review" value={counts.review || 0} />
             <Stat icon="film" tone="violet" label="In production" value={inProd} sub={o.worker?.busy && o.worker.current ? `${o.worker.current.stage}…` : null} />
-            <Stat icon="calendar" tone="green" label="Scheduled" value={(counts.approved || 0) + (counts.publishing || 0)} />
+            <Stat icon="calendar" tone="green" label="Scheduled" value={(counts.approved || 0) + (counts.publishing || 0) + upcoming}
+              sub={upcoming ? `${upcoming} already on YouTube, going public on time` : null} />
             {ch?.connected
               ? <Stat icon="users" tone="blue" label="Subscribers" value={fmtNum(ch.subscribers)} sub={`${fmtNum(ch.views)} views`} />
               : <Stat icon="star" tone="pink" label="Published" value={counts.published || 0} sub={counts.failed ? `${counts.failed} failed` : null} />}
@@ -169,7 +172,7 @@ export default function Home() {
         ) : (
           <div className="board compact">
             {PIPE.map(([title, sts, tone]) => {
-              const items = list.filter((e) => sts.includes(e.status))
+              const items = list.filter((e) => sts.includes(shownStatus(e)))
               return (
                 <div className={`col t-${tone}`} key={title}>
                   <div className="col-head"><span className="col-dot" />{title}<span className="col-count">{items.length}</span></div>
@@ -188,7 +191,7 @@ export default function Home() {
       {published.length > 0 && (
         <section>
           <div className="section-title">
-            <div><h2>Recently published</h2></div>
+            <div><h2>Live on YouTube</h2></div>
             <Link to="/episodes?status=published" className="link-sm">All published<Icon name="arrowRight" size={14} /></Link>
           </div>
           <div className="grid cards">{published.map((e) => <EpisodeCard key={e.id} ep={e} cat={catMap[e.category]} bar={bar} />)}</div>

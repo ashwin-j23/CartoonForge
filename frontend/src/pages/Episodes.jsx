@@ -5,7 +5,7 @@ import { EpisodeCard, KindBadge, MiniCard, Thumb } from '../components/EpisodeCa
 import Icon from '../components/icons'
 import { AnimationBadge, StyleBadge, useStyles } from '../components/looks'
 import {
-  ago, Empty, fmtDur, isLive, PageHead, ScoreBadge, Seg, Skeleton, SkeletonCards, STATUS, STATUS_ORDER, StatusPill, useAction, useApi, useCategoryMap,
+  ago, Empty, fmtDur, isLive, PageHead, ScoreBadge, Seg, Skeleton, SkeletonCards, shownStatus, STATUS, STATUS_ORDER, StatusPill, useAction, useApi, useCategoryMap,
 } from '../components/ui'
 
 const BOARD = [
@@ -13,7 +13,8 @@ const BOARD = [
   ['Rendering', ['rendering'], 'violet'],
   ['Review', ['review'], 'amber'],
   ['Scheduled', ['approved', 'publishing'], 'green'],
-  ['Published', ['published'], 'pink'],
+  ['Upcoming on YouTube', ['upcoming'], 'blue'],
+  ['Live on YouTube', ['published'], 'pink'],
   ['Failed', ['failed', 'rejected'], 'red'],
 ]
 const KINDS = [['', 'All'], ['episode', 'Episodes'], ['short', 'Shorts'], ['compilation', 'Compilations']]
@@ -35,7 +36,7 @@ export default function Episodes() {
   const all = Array.isArray(data) ? data : []
   const counts = useMemo(() => {
     const c = {}
-    for (const e of all) if (!kind || (e.kind || 'episode') === kind) c[e.status] = (c[e.status] || 0) + 1
+    for (const e of all) if (!kind || (e.kind || 'episode') === kind) c[shownStatus(e)] = (c[shownStatus(e)] || 0) + 1
     return c
   }, [all, kind])
   const base = useMemo(() => {
@@ -43,7 +44,7 @@ export default function Episodes() {
     return all.filter((e) => (!kind || (e.kind || 'episode') === kind)
       && (!needle || [e.title, e.topic, e.category, String(e.id)].some((x) => x && String(x).toLowerCase().includes(needle))))
   }, [all, q, kind])
-  const list = status ? base.filter((e) => e.status === status) : base
+  const list = status ? base.filter((e) => shownStatus(e) === status) : base
   const reviewQ = !status ? base.filter((e) => e.status === 'review') : []
   const rest = !status ? base.filter((e) => e.status !== 'review') : list
   const total = Object.values(counts).reduce((a, b) => a + b, 0)
@@ -89,17 +90,17 @@ export default function Episodes() {
       ) : view === 'board' ? (
         <div className="board">
           {BOARD.map(([title, sts, tone]) => {
-            const items = base.filter((e) => sts.includes(e.status))
+            const items = base.filter((e) => sts.includes(shownStatus(e)))
             return (
               <div className={`col t-${tone} ${items.length ? '' : 'is-empty'}`} key={title}>
                 <div className="col-head"><span className="col-dot" />{title}<span className="col-count">{items.length}</span></div>
                 <div className="col-body">
                   {items.length === 0 && <div className="col-empty">Nothing here</div>}
-                  {items.slice(0, title === 'Published' ? 12 : 50).map((e) => (
+                  {items.slice(0, title === 'Live on YouTube' ? 12 : 50).map((e) => (
                     <MiniCard key={e.id} ep={e} catEmoji={catMap[e.category]?.emoji} bar={bar}
                       onRetry={title === 'Failed' ? retry : undefined} retrying={busy === `retry-${e.id}`} />
                   ))}
-                  {title === 'Published' && items.length > 12 && <button className="col-more" onClick={() => setParams({ view: 'grid', status: 'published' })}>+{items.length - 12} more</button>}
+                  {title === 'Live on YouTube' && items.length > 12 && <button className="col-more" onClick={() => setParams({ view: 'grid', status: 'published' })}>+{items.length - 12} more</button>}
                 </div>
               </div>
             )
@@ -151,7 +152,7 @@ function EpisodeList({ list, view, catMap, bar, styleMap }) {
                 {((e.art_style && e.art_style !== 'auto') || e.rendered_style) && <StyleBadge id={e.art_style} rendered={e.rendered_style} map={styleMap} size="sm" />}
                 {e.animation && e.animation !== 'code' && <AnimationBadge mode={e.animation} size="sm" />}
                 <ScoreBadge score={e.score} bar={bar} />
-                <StatusPill status={e.status} small />
+                <StatusPill status={shownStatus(e)} small />
               </span>
             </Link>
           </li>
