@@ -678,12 +678,17 @@ def _keep_full():
         want = 1                      # without an AI writer every plan is the same demo: keep just one, don't churn
     room = min(3, max(0, want - len(pending)))                 # at most 3 new plans per heartbeat
     if room:
-        try:                                   # every waiting episode holds its full video: don't overfill storage
+        try:                                   # every waiting episode holds its full video: plan only what fits
             from . import janitor
             u = janitor.usage()
-            if u["pct"] is not None and u["pct"] >= 75:
-                log(f"Storage {u['used_mb']:.0f} of {u['limit_mb']} MB: no new episodes until some are published", "warn")
-                room = 0
+            if u["pct"] is not None and u["pct"] >= 100 * janitor.SOFT:
+                janitor.cleanup()              # published videos are on YouTube: free their copies first
+                u = janitor.usage()
+            if u["pct"] is not None:
+                fits = int((u["limit_mb"] * 0.9 - u["used_mb"]) // janitor.EPISODE_MB)
+                if fits < room:
+                    log(f"Storage {u['used_mb']:.0f} of {u['limit_mb']} MB: planning {max(0, fits)} of {room} new episodes", "warn")
+                    room = max(0, fits)
         except Exception:  # noqa: BLE001
             pass
     if room and s.get("book_series") and has_ai():

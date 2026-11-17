@@ -69,3 +69,18 @@ def test_uploaded_videos_keep_their_slot():
     slot = pipeline.free_slots(1)[0]
     db.insert("episodes", {"kind": "episode", "status": "published", "topic": "S", "published_at": slot})
     assert slot not in pipeline.free_slots(3)
+
+
+def test_planner_only_plans_what_storage_can_hold(monkeypatch):
+    from app.settings import save_app_settings
+    db = get_db()
+    for e in db.query("episodes", limit=1000):
+        db.delete("episodes", e["id"])
+    save_app_settings({"auto_generate": True, "episodes_per_day": 3, "book_series": False})
+    monkeypatch.setattr(pipeline, "has_ai", lambda: True)
+    monkeypatch.setattr(janitor, "cleanup", lambda dry=False: {})
+    monkeypatch.setattr(janitor, "usage", lambda files=None: {"used_mb": 500, "limit_mb": 1000, "pct": 50.0})
+    made = []
+    monkeypatch.setattr(pipeline, "create", lambda **k: made.append(1))
+    pipeline._keep_full()
+    assert len(made) == 1                      # (900 - 500) // 260 = 1 fits, not 3

@@ -7,6 +7,7 @@ Rules (run daily by the worker, or from the dashboard):
   3. Rejected / failed episodes untouched for DEAD_DAYS: all their media is deleted.
   4. Published videos older than PREVIEW_DAYS: the preview goes too (the video lives on YouTube).
   5. Still over the soft limit: published episodes are slimmed (rule 2) oldest first, whatever their age.
+  6. Still over: previews of videos already live on YouTube go too, oldest first.
 Nothing waiting to be published is ever touched, and nothing uploaded in the last GRACE hours (a render in flight).
 """
 from __future__ import annotations
@@ -25,7 +26,8 @@ DEAD_DAYS = 7
 PREVIEW_DAYS = 45
 GRACE_HOURS = 3
 LIMIT_MB = int(config.env("STORAGE_LIMIT_MB", "1000"))      # Supabase free plan
-SOFT = 0.8                                                  # aim to stay under 80% of the limit
+SOFT = 0.5                                                  # aim for half the limit: new episodes need room to render
+EPISODE_MB = 260                                            # a full episode render waiting to be published
 WAITING = ("planned", "writing", "scripted", "rendering", "review", "approved", "publishing")
 
 
@@ -168,6 +170,18 @@ def cleanup(dry: bool = False) -> dict:
             if parts:                          # uploaded (public or set to go live): YouTube has the full copy
                 drop(parts, "over the storage limit: full copy is on YouTube")
                 patches[e["id"]] = {**patches.get(e["id"], {}), "archived": True}
+
+    # 6. still too big: previews of videos already live (YouTube has them), oldest first
+    if left() > LIMIT_MB * SOFT:
+        old = sorted([e for e in eps if e["status"] == "published" and key_of(e.get("video_url"))
+                      and (_parse(e.get("published_at")) or now) < now - timedelta(hours=GRACE_HOURS)],
+                     key=lambda e: e.get("published_at") or "")
+        for e in old:
+            if left() <= LIMIT_MB * SOFT:
+                break
+            vk = key_of(e["video_url"])
+            drop([f for f in files if f["path"] == vk or f["path"].startswith(vk + ".part")], "over the storage limit: video is on YouTube")
+            patches[e["id"]] = {**patches.get(e["id"], {}), "video_url": None, "archived": True}
 
     freed = sum(f["size"] for f in files if f["path"] in gone) / 1e6
     if not dry:
