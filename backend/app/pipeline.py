@@ -463,13 +463,17 @@ def publish_due() -> list[str]:
 
 
 # ---------------------------------------------------------------- growth: shorts, compilations, editions
+SHORT_GAP = timedelta(minutes=60)    # no two videos go live closer than this: each gets its own first viewers
+
+
 def short_slot(at: datetime) -> str:
-    """`at`, or the next half hour after it that no other video (Short or episode) already uses."""
+    """`at`, or the next half hour after it with no other video (Short or episode) within SHORT_GAP."""
     db = get_db()
-    used = {(e.get("publish_at") or "")[:16] for e in db.query("episodes", in_={"status": ["approved", "publishing"]})}
-    used |= {(e.get("published_at") or "")[:16] for e in db.query("episodes", eq={"status": "published"}, limit=200)}
+    used = [_parse(e.get("publish_at")) for e in db.query("episodes", in_={"status": ["approved", "publishing"]})]
+    used += [_parse(e.get("published_at")) for e in db.query("episodes", eq={"status": "published"}, limit=200)]
+    used = [u for u in used if u]
     at = at.astimezone(timezone.utc).replace(second=0, microsecond=0)
-    while at.isoformat(timespec="seconds")[:16] in used:
+    while any(abs(at - u) < SHORT_GAP for u in used):
         at += timedelta(minutes=30)
     return at.isoformat(timespec="seconds")
 
