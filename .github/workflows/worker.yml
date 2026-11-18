@@ -1,11 +1,11 @@
 # The render farm: a free GitHub runner writes + renders the queued episodes, publishes what is due.
-# Runs every 6 hours and whenever the dashboard dispatches it (WORKER_MODE=github). Needs Supabase so the
+# Runs every 2 hours and whenever the dashboard dispatches it (WORKER_MODE=github). Needs Supabase so the
 # runner and the dashboard share one database and video storage.
 name: worker
 
 on:
   schedule:
-    - cron: "23 */6 * * *"
+    - cron: "23 */2 * * *"
   workflow_dispatch:
 
 concurrency:

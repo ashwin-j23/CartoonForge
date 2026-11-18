@@ -324,6 +324,17 @@ def _top_up(segments: list[dict], plan: dict, cat: dict, band_id: str, lang: str
     log(f"Length check: {start / 60:.1f} -> {est / 60:.1f} min (target {minutes:.0f})")
 
 
+def lengthen(script: dict, minutes: float, log=print) -> dict:
+    """A finished script that rendered too short gets new lines in its thinnest segments (same as the top-up)."""
+    cat = categories.get(script["category"])
+    plan = {"title_idea": script.get("title_idea"), "key_words": script.get("key_words"), "lesson": script.get("lesson"),
+            "characters": script.get("characters") or [], "segments": script.get("outline") or []}
+    segments = [dict(sg, scenes=list(sg["scenes"])) for sg in script["segments"]]
+    _top_up(segments, plan, cat, script["age_band"], script.get("language", "en"), float(minutes or 12),
+            script.get("source"), log)
+    return {**script, "segments": segments}
+
+
 def rewrite_segments(script: dict, notes: dict[int, str], log=print) -> dict:
     """Rewrite only the segments the Critic flagged (index -> notes)."""
     cat = categories.get(script["category"])

@@ -8,6 +8,9 @@ and the daily trend scan. Every heartbeat (pipeline.tick, every 5 minutes on thi
   2. retry failed episodes       auto_retry(): up to `max_retries` times, 30 min apart
   3. plan / write / render       (pipeline._keep_full + process)
   4. approve what passes         auto_approve(): only if EVERY gate passes, else it stays in Review with the reason
+  4b. fix what doesn't           auto_review(): re-render (QA / no video) or rewrite (low score / demo script) up to
+                                 MAX_AUTO_FIXES times; still failing, or blocked by the safety gate → rejected, and the
+                                 planner makes a replacement. Channel-wide blockers (YouTube, kill switch) just wait.
   5. publish what is due         (pipeline.publish_due — respects max_posts_per_day and the kill switch)
 
 Gates for publishing without a human (children's content, so strict):
@@ -77,6 +80,69 @@ def auto_approve(log=print) -> list[str]:
         db.log("Auto: approved (all gates passed) for the next posting slot", episode_id=ep["id"])
         done.append(ep["id"])
     return done
+
+
+MAX_AUTO_FIXES = 2
+CHANNEL_BLOCKERS = ("YouTube not connected", "kill switch is on", "made-for-kids is off")
+
+
+def _too_short(ep: dict) -> bool:
+    return any(c["name"].startswith("Length") and not c.get("ok") and "min (target" in c.get("detail", "")
+               and float(c["detail"].split(" min")[0]) < float(c["detail"].split("target ")[1].split(",")[0])
+               for c in (ep.get("qa") or {}).get("checks", []))
+
+
+def auto_review(log=print) -> dict:
+    """Nobody has to open Review: held episodes are fixed automatically, or replaced if they can't be."""
+    s = app_settings()
+    out: dict = {"rerender": [], "rewrite": [], "rejected": []}
+    if not s.get("full_auto"):
+        return out
+    from .pipeline import has_ai
+    db = get_db()
+
+    def reject(ep: dict, why: str) -> None:
+        db.update("episodes", ep["id"], {"status": "rejected", "publish_at": None, "error": why[:300]})
+        db.log(f"Auto: rejected ({why[:200]}); a new episode will be planned instead", "warn", ep["id"])
+        out["rejected"].append(ep["id"])
+
+    for ep in db.query("episodes", eq={"status": "review"}, order="created_at", desc=False, limit=20):
+        why = gates(ep, s)
+        if not why or any(w in CHANNEL_BLOCKERS for w in why):
+            continue                                   # approvable, or waiting on the channel (not the episode)
+        n = int(ep.get("auto_fixes") or 0)
+        if n >= MAX_AUTO_FIXES:
+            reject(ep, f"still not good enough after {n} automatic fixes: " + "; ".join(why))
+            continue
+        content = [w for w in why if w.startswith(("psychology score", "built-in demo"))]
+        short = _too_short(ep)
+        if (content or short) and not has_ai():
+            continue                                   # can't write without an AI writer: wait for a key
+        patch = {"auto_fixes": n + 1, "auto_hold": why, "progress": {"stage": "queued (auto fix)", "pct": 0}}
+        if content:                                    # weak script → write it again
+            patch["status"], how = "planned", "rewriting"
+        elif short:                                    # good script, rendered short → add lines, render again
+            from .kids import writer
+            try:
+                script = writer.lengthen(ep["script"], float(ep.get("minutes") or s.get("target_minutes") or 12))
+            except Exception as e:  # noqa: BLE001  (AI busy: try again next heartbeat, doesn't use up a fix)
+                db.log(f"Auto review: could not lengthen yet ({str(e)[:120]})", "warn", ep["id"])
+                continue
+            patch.update(status="scripted", script=script)
+            how = "lengthening the script and re-rendering"
+        else:                                          # other QA issue / no video → render again
+            patch["status"], how = "scripted", "re-rendering"
+        db.update("episodes", ep["id"], patch)
+        db.log(f"Auto review ({n + 1}/{MAX_AUTO_FIXES}): {how} — " + "; ".join(why), "warn", ep["id"])
+        out["rewrite" if content else "rerender"].append(ep["id"])
+
+    for ep in db.query("episodes", eq={"status": "failed"}, limit=50):   # dead ends: clear them so the pipe refills
+        err = str(ep.get("error") or "")
+        if err.startswith("Safety gate"):
+            reject(ep, err)
+        elif int(ep.get("retries") or 0) >= int(s.get("max_retries", 2)):
+            reject(ep, f"failed after {ep.get('retries')} retries: {err[:150]}")
+    return out
 
 
 def auto_retry() -> list[str]:

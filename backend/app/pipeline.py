@@ -744,6 +744,7 @@ def tick(render_work: bool = True, budget_s: int = 2700) -> dict:
                 process(e["id"])
                 out["processed"].append(e["id"])
             out["approved"] = automation.auto_approve()
+            out["auto_review"] = automation.auto_review()
             out["published"] += publish_due()
         db = get_db()
         day = datetime.now(timezone.utc).date().isoformat()

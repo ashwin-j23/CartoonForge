@@ -79,3 +79,44 @@ def test_api_status_and_toggle():
     assert on["enabled"] is True and c.get("/api/settings", headers=h).json()["autopilot"] is True
     off = c.put("/api/automation", headers=h, json={"enabled": False}).json()
     assert off["enabled"] is False
+
+
+def test_auto_review_fixes_then_replaces_held_episodes(monkeypatch):
+    from app import automation
+    db = get_db()
+    for e in db.query("episodes", limit=500):
+        db.delete("episodes", e["id"])
+    save_app_settings({"full_auto": True, "kill_switch": False, "made_for_kids": True})
+    monkeypatch.setattr(automation, "_yt", lambda: True)
+    monkeypatch.setattr(pipeline, "has_ai", lambda: True)
+    weak = _good_ep(status="review", critic={"score": 5})
+    bad_qa = _good_ep(status="review", qa={"ok": False, "checks": [{"name": "length", "ok": False}]})
+    worn = _good_ep(status="review", critic={"score": 5}, auto_fixes=2)
+    unsafe = _good_ep(status="failed", error="Safety gate blocked: x")
+    r = automation.auto_review()
+    assert r["rewrite"] == [weak["id"]] and db.get("episodes", weak["id"])["status"] == "planned"
+    assert r["rerender"] == [bad_qa["id"]] and db.get("episodes", bad_qa["id"])["status"] == "scripted"
+    assert db.get("episodes", worn["id"])["status"] == "rejected"
+    assert db.get("episodes", unsafe["id"])["status"] == "rejected"
+    # a channel-wide blocker is not the episode's fault: it just waits
+    monkeypatch.setattr(automation, "_yt", lambda: False)
+    held = _good_ep(status="review", critic={"score": 5})
+    automation.auto_review()
+    assert db.get("episodes", held["id"])["status"] == "review"
+
+
+def test_auto_review_lengthens_a_short_render(monkeypatch):
+    from app import automation
+    from app.kids import writer
+    db = get_db()
+    for e in db.query("episodes", limit=500):
+        db.delete("episodes", e["id"])
+    save_app_settings({"full_auto": True, "kill_switch": False, "made_for_kids": True})
+    monkeypatch.setattr(automation, "_yt", lambda: True)
+    monkeypatch.setattr(pipeline, "has_ai", lambda: True)
+    monkeypatch.setattr(writer, "lengthen", lambda script, minutes, log=print: {**script, "longer": True})
+    ep = _good_ep(qa={"ok": False, "checks": [{"name": "Length 10-16 min", "ok": False,
+                                              "detail": "9.1 min (target 12, ok 9.6-16.2)"}]})
+    automation.auto_review()
+    got = db.get("episodes", ep["id"])
+    assert got["status"] == "scripted" and got["script"]["longer"] and got["auto_fixes"] == 1
