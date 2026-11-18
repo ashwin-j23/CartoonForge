@@ -128,6 +128,9 @@ def auto_review(log=print) -> dict:
             except Exception as e:  # noqa: BLE001  (AI busy: try again next heartbeat, doesn't use up a fix)
                 db.log(f"Auto review: could not lengthen yet ({str(e)[:120]})", "warn", ep["id"])
                 continue
+            before = writer.template_seconds(ep["script"]["segments"], ep.get("age_band") or "preschool")
+            if writer.template_seconds(script["segments"], ep.get("age_band") or "preschool") < before + 30:
+                continue                               # AI busy, nothing added: try next heartbeat, fix not used up
             patch.update(status="scripted", script=script)
             how = "lengthening the script and re-rendering"
         else:                                          # other QA issue / no video → render again

@@ -114,7 +114,8 @@ def test_auto_review_lengthens_a_short_render(monkeypatch):
     save_app_settings({"full_auto": True, "kill_switch": False, "made_for_kids": True})
     monkeypatch.setattr(automation, "_yt", lambda: True)
     monkeypatch.setattr(pipeline, "has_ai", lambda: True)
-    monkeypatch.setattr(writer, "lengthen", lambda script, minutes, log=print: {**script, "longer": True})
+    monkeypatch.setattr(writer, "lengthen", lambda script, minutes, log=print: {**script, "longer": True, "segments": ["more"]})
+    monkeypatch.setattr(writer, "template_seconds", lambda segs, band: 60 * len(segs))
     ep = _good_ep(qa={"ok": False, "checks": [{"name": "Length 10-16 min", "ok": False,
                                               "detail": "9.1 min (target 12, ok 9.6-16.2)"}]})
     automation.auto_review()
