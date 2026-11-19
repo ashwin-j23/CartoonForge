@@ -84,3 +84,19 @@ def test_planner_only_plans_what_storage_can_hold(monkeypatch):
     monkeypatch.setattr(pipeline, "create", lambda **k: made.append(1))
     pipeline._keep_full()
     assert len(made) == 1                      # (900 - 500) // 260 = 1 fits, not 3
+
+
+def test_maintain_deep_cleans_every_3_days_and_cleans_at_85_percent(monkeypatch):
+    db = get_db()
+    calls = []
+    monkeypatch.setattr(janitor, "cleanup", lambda dry=False, deep=False: calls.append(deep) or {"freed_mb": 1.0})
+    level = {"pct": 40.0}
+    monkeypatch.setattr(janitor, "usage", lambda files=None: {"used_mb": level["pct"] * 10, "limit_mb": 1000, **level})
+    db.set_setting("storage_deep_clean", None)
+    now = datetime.now(timezone.utc)
+    assert janitor.maintain(now)["ran"].startswith("deep") and calls == [True]
+    assert janitor.maintain(now + timedelta(days=1))["ran"] is None                       # low and deep-cleaned lately
+    level["pct"] = 86.0
+    assert janitor.maintain(now + timedelta(days=1))["ran"].startswith("clean") and calls[-1] is False
+    level["pct"] = 40.0
+    assert janitor.maintain(now + timedelta(days=3, minutes=1))["ran"].startswith("deep")  # 3 days later

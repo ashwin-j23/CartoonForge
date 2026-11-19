@@ -8,6 +8,8 @@ Rules (run daily by the worker, or from the dashboard):
   4. Published videos older than PREVIEW_DAYS: the preview goes too (the video lives on YouTube).
   5. Still over the soft limit: published episodes are slimmed (rule 2) oldest first, whatever their age.
   6. Still over: previews of videos already live on YouTube go too, oldest first.
+Schedule (maintain(), every worker heartbeat): normal clean whenever storage is at HIGH (85%) or more, and a deep
+clean every DEEP_EVERY_DAYS (3) days that also drops the previews of everything already live on YouTube.
 Nothing waiting to be published is ever touched, and nothing uploaded in the last GRACE hours (a render in flight).
 """
 from __future__ import annotations
@@ -27,6 +29,8 @@ PREVIEW_DAYS = 45
 GRACE_HOURS = 3
 LIMIT_MB = int(config.env("STORAGE_LIMIT_MB", "1000"))      # Supabase free plan
 SOFT = 0.5                                                  # aim for half the limit: new episodes need room to render
+HIGH = 0.85                                                 # at or above this: clean right away
+DEEP_EVERY_DAYS = 3                                         # deep clean this often whatever the level
 EPISODE_MB = 260                                            # a full episode render waiting to be published
 WAITING = ("planned", "writing", "scripted", "rendering", "review", "approved", "publishing")
 
@@ -108,7 +112,7 @@ def _parts(files: list[dict], key: str) -> list[dict]:
     return [f for f in files if f["path"].startswith(key + ".part")]
 
 
-def cleanup(dry: bool = False) -> dict:
+def cleanup(dry: bool = False, deep: bool = False) -> dict:
     db = get_db()
     now = datetime.now(timezone.utc)
     files = list_files()
@@ -160,24 +164,24 @@ def cleanup(dry: bool = False) -> dict:
 
     # 5. still too big: slim published episodes oldest first
     left = lambda: sum(f["size"] for f in files if f["path"] not in gone) / 1e6   # noqa: E731
-    if left() > LIMIT_MB * SOFT:
+    if deep or left() > LIMIT_MB * SOFT:
         pub = sorted([e for e in eps if e["status"] == "published" and key_of(e.get("video_url"))],
                      key=lambda e: e.get("published_at") or "")
         for e in pub:
-            if left() <= LIMIT_MB * SOFT:
+            if not deep and left() <= LIMIT_MB * SOFT:
                 break
             parts = [f for f in _parts(files, key_of(e["video_url"])) if f["path"] not in gone]
             if parts:                          # uploaded (public or set to go live): YouTube has the full copy
                 drop(parts, "over the storage limit: full copy is on YouTube")
                 patches[e["id"]] = {**patches.get(e["id"], {}), "archived": True}
 
-    # 6. still too big: previews of videos already live (YouTube has them), oldest first
-    if left() > LIMIT_MB * SOFT:
+    # 6. still too big (or a deep clean): previews of videos already live (YouTube has them), oldest first
+    if deep or left() > LIMIT_MB * SOFT:
         old = sorted([e for e in eps if e["status"] == "published" and key_of(e.get("video_url"))
                       and (_parse(e.get("published_at")) or now) < now - timedelta(hours=GRACE_HOURS)],
                      key=lambda e: e.get("published_at") or "")
         for e in old:
-            if left() <= LIMIT_MB * SOFT:
+            if not deep and left() <= LIMIT_MB * SOFT:
                 break
             vk = key_of(e["video_url"])
             drop([f for f in files if f["path"] == vk or f["path"].startswith(vk + ".part")], "over the storage limit: video is on YouTube")
@@ -199,6 +203,22 @@ def cleanup(dry: bool = False) -> dict:
         reasons[why] = reasons.get(why, 0) + 1
     return {"before": before, "freed_mb": round(freed, 1), "after_mb": round(before["used_mb"] - freed, 1),
             "removed": len(gone), "reasons": reasons, "episodes_updated": len(patches), "dry_run": dry}
+
+
+def maintain(now: datetime | None = None) -> dict:
+    """Run by every heartbeat: clean at HIGH or more; deep clean every DEEP_EVERY_DAYS days."""
+    db = get_db()
+    now = now or datetime.now(timezone.utc)
+    last = _parse((db.get_setting("storage_deep_clean") or {}).get("at"))
+    if not last or now - last >= timedelta(days=DEEP_EVERY_DAYS):
+        res = cleanup(deep=True)
+        db.set_setting("storage_deep_clean", {"at": now.isoformat(timespec="seconds"), "freed_mb": res["freed_mb"]})
+        return {"ran": "deep clean (every 3 days)", **res}
+    u = usage()
+    if u["pct"] is not None and u["pct"] >= 100 * HIGH:
+        db.log(f"Storage at {u['pct']:.0f}% (85%+): cleaning now", "warn")
+        return {"ran": "clean (storage 85%+)", **cleanup()}
+    return {"ran": None, "usage": u}
 
 
 if __name__ == "__main__":       # python -m app.janitor [--apply]

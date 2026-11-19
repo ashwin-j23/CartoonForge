@@ -25,9 +25,9 @@ def test_future_slot_is_uploaded_as_youtube_scheduled_and_past_slot_goes_public(
     for e in get_db().query("episodes", eq={"status": "approved"}):
         get_db().update("episodes", e["id"], {"status": "rejected"})
     now = datetime.now(timezone.utc)
-    soon, late, past = _approved(now + timedelta(hours=5)), _approved(now + timedelta(hours=30)), _approved(now - timedelta(minutes=3))
+    soon, late, past = _approved(now + timedelta(hours=5)), _approved(now + timedelta(hours=100)), _approved(now - timedelta(minutes=3))
     done = pipeline.publish_due()
-    assert past["id"] in done and soon["id"] in done and late["id"] not in done      # 30 h away: not yet
+    assert past["id"] in done and soon["id"] in done and late["id"] not in done      # 100 h away: not yet
     assert ("public", None) in calls                                               # overdue: public now
     priv = [c for c in calls if c[0] == "private"]
     assert len(priv) == 1 and priv[0][1].endswith("Z")                             # YouTube publishes it on time

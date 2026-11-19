@@ -436,7 +436,8 @@ def publish(eid: str, force: bool = False) -> dict:
             Path(local).unlink(missing_ok=True)
 
 
-PREUPLOAD_HOURS = 12      # upload this far ahead as a scheduled video, so it goes live on time whatever the runners do
+PREUPLOAD_HOURS = 72      # upload this far ahead as a YouTube-scheduled video: goes live on time whatever the runners
+                          # do, and its full copy leaves our 1 GB storage as soon as it is approved
 
 
 def _parse(iso: str | None) -> datetime | None:
@@ -760,11 +761,6 @@ def tick(render_work: bool = True, budget_s: int = 2700) -> dict:
             except Exception as e:  # noqa: BLE001
                 out["timezone"] = f"skipped: {str(e)[:120]}"
             try:
-                from . import janitor
-                out["storage"] = janitor.cleanup()
-            except Exception as e:  # noqa: BLE001
-                out["storage"] = f"skipped: {str(e)[:120]}"
-            try:
                 db.prune()
             except Exception:  # noqa: BLE001
                 pass
@@ -773,6 +769,11 @@ def tick(render_work: bool = True, budget_s: int = 2700) -> dict:
                 out["trends"] = trends.scan(lambda m: log(m)).get("ideas")
             except Exception as e:  # noqa: BLE001
                 out["trends"] = f"skipped: {str(e)[:120]}"
+        try:                                       # every heartbeat: clean at 85%+, deep clean every 3 days
+            from . import janitor
+            out["storage"] = janitor.maintain()
+        except Exception as e:  # noqa: BLE001
+            out["storage"] = f"skipped: {str(e)[:120]}"
         if render_work:
             _weekly_compilation()
         return out
