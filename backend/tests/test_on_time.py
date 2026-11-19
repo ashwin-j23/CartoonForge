@@ -55,3 +55,18 @@ def test_shorts_never_share_a_time():
     db.insert("episodes", {"kind": "short", "status": "approved", "topic": "A", "publish_at": at.isoformat(timespec="seconds")})
     assert pipeline.short_slot(at).startswith("2030-01-02T00:00")          # same minute -> an hour later
     assert pipeline.short_slot(at + timedelta(minutes=2)).startswith("2030-01-02T00:02")   # 2 min apart is too close
+
+
+def test_overdue_video_on_a_full_day_moves_to_a_new_slot(monkeypatch):
+    db = get_db()
+    for e in db.query("episodes", in_={"status": ["approved", "published"]}, limit=500):
+        db.delete("episodes", e["id"])
+    day = datetime.now(timezone.utc) - timedelta(days=2)
+    for h in range(6):                                                     # that day is already full
+        db.insert("episodes", {"kind": "episode", "status": "published", "topic": "X",
+                               "published_at": day.replace(hour=h).isoformat(timespec="seconds")})
+    late = db.insert("episodes", {"kind": "short", "status": "approved", "topic": "S", "video_url": "x.mp4",
+                                  "publish_at": day.replace(hour=20).isoformat(timespec="seconds")})
+    monkeypatch.setattr(pipeline, "publish", lambda eid, force=False: None)
+    assert late["id"] not in pipeline.publish_due()
+    assert db.get("episodes", late["id"])["publish_at"] > datetime.now(timezone.utc).isoformat(timespec="seconds")

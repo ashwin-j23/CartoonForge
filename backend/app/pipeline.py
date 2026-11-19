@@ -463,6 +463,12 @@ def publish_due() -> list[str]:
     for ep in get_db().query("episodes", eq={"status": "approved"}, lte={"publish_at": ahead}, order="publish_at", desc=False):
         day = (ep.get("publish_at") or "")[:10]
         if per_day.get(day, 0) >= cap:
+            if (ep.get("publish_at") or "") < datetime.now(timezone.utc).isoformat(timespec="seconds"):
+                # its day filled up and the slot has passed: move it to the next free slot instead of waiting forever
+                nxt = (short_slot(datetime.now(timezone.utc) + timedelta(hours=1)) if ep.get("kind") == "short"
+                       else slot_for(ep))
+                get_db().update("episodes", ep["id"], {"publish_at": nxt})
+                log(f"Its day was full: moved to {nxt}", ep=ep["id"])
             continue
         publish(ep["id"])
         out.append(ep["id"])
