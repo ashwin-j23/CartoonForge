@@ -220,7 +220,9 @@ def thumbnail(script: dict, settings: dict, out: Path, size=(1280, 720)) -> Path
     bg = sets.background(seg.get("set") or "meadow", W, H, min(ps.pace("rapid")["vivid"],
                                                                palette.vivid_cap(script.get("age_band")))).copy()
     bg = ImageEnhance.Color(bg.convert("RGB")).enhance(1.45).convert("RGBA")
-    burst = _burst(W, H, W * focus_x, H * .58, palette.button())
+    bedtime = script.get("category") == "bedtime" or re.search(r"bedtime|goodnight|lullaby|sleep", title.lower())
+    # bedtime: night blue, so it sits naturally beside the lullabies and read-alouds that send these viewers
+    burst = _burst(W, H, W * focus_x, H * .58, (52, 64, 150) if bedtime else palette.button())
     bg = ImageEnhance.Color(Image.blend(bg, burst, .66).convert("RGB")).enhance(1.35).convert("RGBA")
     border = max(6, H // 90)
 

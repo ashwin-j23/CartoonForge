@@ -350,7 +350,7 @@ def slot_for(ep: dict) -> str:
     if ep.get("category") == "bedtime" or "bedtime" in str((ep.get("meta") or {}).get("title", "")).lower():
         s = app_settings()
         tz = ZoneInfo(s.get("timezone") or "UTC")
-        last = max(s.get("post_times") or ["16:00"])
+        last = s.get("bedtime_post_time") or max(s.get("post_times") or ["16:00"])   # the evening slot of the main audience
         late = [x for x in slots if datetime.fromisoformat(x).astimezone(tz).strftime("%H:%M") == last]
         if late:
             return late[0]
@@ -520,9 +520,15 @@ def make_short(parent_id: str) -> dict:
         url = storage.put(out, f"{parent_id}/short-{int(time.time())}.mp4", "video/mp4")
         m = p.get("meta") or {}
         cat = categories.get(p["category"])
-        title = f"{(p['script'] or {}).get('title_idea') or p['topic']} 🎵 Sing Along! #shorts"[:100]
-        desc = (f"Sing along with Pip, Mimi and friends! The full {int((p.get('duration') or 600) // 60)}-minute episode "
-                f"is on our channel.\n\n{(m.get('description') or '').split(chr(10))[0]}\n\n#kidssongs #shorts #{cat['id']}")
+        from .kids import hashtags
+        idea = (p['script'] or {}).get('title_idea') or p['topic']
+        # say what the Short really is: a sing-along only when it IS the song; otherwise the topic's search phrase
+        tail = "🎵 Sing Along for Kids" if songs else f"| {cat['name'].split('&')[0].strip()} for Kids"
+        title = f"{idea} {tail}"[:100]
+        full = int((p.get('duration') or 600) // 60)
+        desc = (f"{'Sing along' if songs else 'Watch'} with Hoppy and friends! The full {full}-minute episode "
+                f"\"{m.get('title', idea)}\" is on our channel.\n\n{(m.get('description') or '').split(chr(10))[0]}\n\n"
+                + hashtags.line(p["category"], p.get("script"), short=True))
         ep = db.insert("episodes", {
             "kind": "short", "parent_id": parent_id, "status": "review", "category": p["category"], "topic": p["topic"],
             "age_band": p["age_band"], "language": p.get("language", "en"), "script": p.get("script"),

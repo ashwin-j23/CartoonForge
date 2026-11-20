@@ -25,6 +25,7 @@ DEFAULTS: dict = {
     "episodes_per_day": 3,                # long episodes a day (one per posting time)
     "post_days": [0, 1, 2, 3, 4, 5, 6],   # 0 = Monday
     "post_times": ["08:00", "11:00", "16:00"],   # local: breakfast, late morning, after school/nap (parents press play)
+    "bedtime_post_time": "",                     # bedtime episodes go out at this slot ("" = the latest post time)
     "auto_timezone": True,                # move posting times to the country most views come from
     "post_time": "07:30",                 # (legacy single slot)
     "trend_share": 0.6,                   # share of new episodes taken from the trend analyser (rest = balanced mix)

@@ -59,3 +59,5 @@ frontend/dist/
 .zprofile
 .zshrc
 .ripgreprc
+research_notes/
+reports/

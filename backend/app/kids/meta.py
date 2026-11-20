@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 
 from ..llm.router import LLMError, complete_json
-from . import categories, languages, psychology, safety
+from . import categories, hashtags, languages, psychology, safety
 from .growth import SEO_KEYWORDS
 
 # Search phrases that promise specific content -> words that must appear somewhere in the script for the promise to
@@ -120,9 +120,9 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
               "feelings and the whole wide world. Made with child-development principles: gentle pace, real pauses "
               "for your child to answer, movement breaks and a calm goodbye.",
               "", "For grown-ups: watch together when you can and ask your child what they learned!",
-              "", (f"#{handle[1:]} " if handle.startswith("@") else "") + "#kidslearning #preschool #" + re.sub(r"[^A-Za-z0-9]", "", cat["name"].split("&")[0]).lower()]
+              "", hashtags.line(script["category"], script)]
     meta["description"] = "\n".join(parts)[:4900]
-    meta["tags"] = list(dict.fromkeys(str(t)[:30] for t in meta.get("tags", [])))[:15]
+    meta["tags"] = hashtags.clean_tags(meta.get("tags", []), name)[:20]      # never cut mid-word, no brand typos
     meta["category_id"] = cat["yt"]
     meta["playlist"] = f"{cat['emoji']} {cat['name']} | {name}"
     return meta
