@@ -52,8 +52,9 @@ def with_link(description: str, eid: str) -> str:
     # replace an older feedback line (e.g. a wrong address) instead of adding a second one
     description = "\n\n".join(p for p in description.split("\n\n") if not p.startswith(LINE_START))
     line = f"{LINE_START} Tell us in 1 minute (what to change, what Hoppy should learn next) 👉 {url}"
-    parts = description.split("\n\n", 1)
-    return f"{parts[0]}\n\n{line}" + (f"\n\n{parts[1]}" if len(parts) > 1 else "")
+    paras = description.split("\n\n")
+    k = 2 if len(paras) > 1 and paras[1].startswith("0:00") else 1     # keep summary + timestamps together on top
+    return "\n\n".join(paras[:k] + [line] + paras[k:])
 
 
 def scrub(text: str, limit: int) -> str:

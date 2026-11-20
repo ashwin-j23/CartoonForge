@@ -72,6 +72,33 @@ def chapters(timeline: list[dict]) -> str:
     return "\n".join(rows) if len(rows) >= 3 else ""
 
 
+TITLE_MAX = 50          # parents browse on phones: longer titles are cut off in the feed
+_AUDIENCE = re.compile(r"\s+for (toddlers|kids|preschoolers|children|babies)\s*$", re.I)
+_DANGLING = {"a", "an", "and", "the", "of", "for", "with", "to", "in", "on", "&", "|", "-", "–", ":"}
+
+
+def fit_title(title: str, limit: int = TITLE_MAX) -> str:
+    """Shorten a title to `limit` without ever ending mid-phrase: drop a '| tail', then a trailing 'for Toddlers',
+    then whole words (never leaving 'and', 'for', '&' dangling)."""
+    t = re.sub(r"\s+", " ", str(title or "")).strip()
+    while len(t) > limit and re.search(r"\s[|–:-]\s", t):
+        t = re.split(r"\s[|–:-]\s(?!.*\s[|–:-]\s)", t)[0].strip()          # drop the last '| part'
+    if len(t) > limit:
+        t = _AUDIENCE.sub("", t).strip()
+    if len(t) > limit:                    # a natural stop: after 'Bigger?', 'Fossils!' or an emoji
+        stops = [m.end() for m in re.finditer(r"[!?](?=\s)|[^\w\s&|:,.'\-–]+(?=\s)", t) if 25 <= m.end() <= limit]
+        if stops:
+            return t[:max(stops)].strip()
+    if len(t) > limit:
+        words = t.split()
+        while words and len(" ".join(words)) > limit:
+            words.pop()
+        while words and words[-1].lower() in _DANGLING:
+            words.pop()
+        t = " ".join(words)
+    return t
+
+
 def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> dict:
     cat = categories.get(script["category"])
     b = psychology.band(script["age_band"])
@@ -88,7 +115,7 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
     }.get(style, f"START with the story's exciting subject, then '{phrase}'")
     src = script.get("source")
     fallback = {
-        "title": f"{script.get('title_idea') or script['topic']} {cat['emoji']} {phrase}"[:100],
+        "title": fit_title(f"{script.get('title_idea') or script['topic']} {cat['emoji']} {phrase}"),
         "hook": script.get("summary", ""),
         "tags": [cat["name"], "kids songs", "learning for kids", "preschool", "toddler learning",
                  "nursery rhymes", "educational videos for kids", name] + script.get("key_words", []),
@@ -102,9 +129,9 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
             "JSON only.",
             f"Channel: {name}. Episode: {script.get('title_idea')} ({cat['name']}, ages {b['ages']}). "
             f"Summary: {script.get('summary')}. Key words: {script.get('key_words')}. Lesson: {script.get('lesson')}.\n"
-            f"Return {{\"title\": str (max 70 chars; {style_rule}, e.g. one of: "
+            f"Return {{\"title\": str (max {TITLE_MAX} chars, short and clear beats keyword-packed; {style_rule}, e.g. one of: "
             f"{', '.join(SEO_KEYWORDS[:14])}; then what the child learns + who it's for, e.g. 'Counting Song "
-            "🍎 Count to 10 with Pip | Learning for Toddlers'), \"hook\": str (2 warm sentences for parents), "
+            "🍎 Count to 10 with Pip'), \"hook\": str (ONE plain sentence: what happens and what the child learns), "
             "\"learning_goals\": [3 short bullets], \"thumb_text\": str (2-3 BIG words a toddler's parent gets at a glance on a "
             "phone, e.g. 'Count to 10!', 'Sleepy Fox'), "
             "\"tags\": [12-15 search phrases parents type]}",
@@ -113,7 +140,7 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
     except (LLMError, ValueError):
         meta = dict(fallback)
     meta["title"] = re.sub(r"\s+", " ", str(meta["title"])).strip()
-    meta["title"] = re.sub(rf"\s*[|\-–]\s*{re.escape(name)}\s*$", "", meta["title"], flags=re.I)[:100]   # no branding
+    meta["title"] = fit_title(re.sub(rf"\s*[|\-–]\s*{re.escape(name)}\s*$", "", meta["title"], flags=re.I))  # no brand
     if any(i["level"] == "block" for i in safety.check_title(meta["title"])) or unfounded(meta["title"], script):
         meta["title"] = fallback["title"]
     if unfounded(meta.get("thumb_text", ""), script):
@@ -130,14 +157,14 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
     handle = (settings.get("channel_handle") or "").strip()
     sub_link = f" 👉 youtube.com/{handle}?sub_confirmation=1" if handle.startswith("@") else ""
     parts = [meta.get("hook", ""), ""]
+    ch = chapters(timeline or [])
+    if ch:                                    # parents jump to the song: timestamps right under the summary
+        parts += [ch, ""]
     if settings.get("growth_cta", True):
         parts += [f"👉 Grown-ups: subscribe to {name} for new episodes every day — songs, stories and learning "
                   f"your child will ask for again and again!{sub_link}", ""]
     if goals:
         parts += ["In this episode your child will:"] + [f"• {g}" for g in goals] + [""]
-    ch = chapters(timeline or [])
-    if ch:
-        parts += ["Chapters:", ch, ""]
     parts += parts_src + [cast_line, "",
               f"{name} makes calm, kind, curious videos for children {b['ages']}: songs, stories, counting, letters, "
               "feelings and the whole wide world. Made with child-development principles: gentle pace, real pauses "

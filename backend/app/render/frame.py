@@ -823,8 +823,10 @@ def _render(tl: Timeline, t: float) -> Image.Image:
     tq = _lookup_time(tl, t)                     # in a segment gap, past the iris midpoint, show the next segment
     si, sc = tl.scene_at(tq)
     gi, seg = tl.seg_at(tq)
-    if sc is None:
+    if sc is None:                               # the 0.3 s before the hook's first line
         sc, si = tl.scenes[0], 0
+    if seg is None and tl.segments:
+        gi, seg = 0, tl.segments[0]
     data = tl.scene_data(sc)
     set_id = (seg or {}).get("set") or "meadow"
 

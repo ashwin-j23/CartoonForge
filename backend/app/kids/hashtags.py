@@ -65,25 +65,26 @@ def _text(script: dict | None) -> str:
     return json.dumps(script or {}, ensure_ascii=False).lower()
 
 
-def pick(category: str, script: dict | None, short: bool = False, today: date | None = None, n: int = 5) -> list[str]:
-    """Ordered, de-duplicated hashtags: season (if the episode is about it) + category + topic + general + brand."""
+def pick(category: str, script: dict | None, short: bool = False, today: date | None = None, n: int = 3) -> list[str]:
+    """Ordered, de-duplicated hashtags: season (if the episode is about it) + category + topic + general.
+    Three focused ones (YouTube shows exactly 3 above the title; more reads as clutter); a Short swaps the last for
+    #Shorts. The brand is in the title area already (channel name), so it doesn't spend a slot."""
     body = _text(script)
     today = today or date.today()
     out: list[str] = []
     for a, b, words, tags in SEASONS:
         if _in_window(today, a, b) and sum(body.count(w) for w in words) >= 2:
             out += tags
-    out += CATEGORY.get(category, [])
-    out += [t for words, t in TOPICAL if sum(body.count(w) for w in words) >= 3]   # the topic, not a passing word
-    out += GENERAL
+    cat = CATEGORY.get(category, [])
+    topic = [t for words, t in TOPICAL if sum(body.count(w) for w in words) >= 3]   # the topic, not a passing word
+    out += cat[:1] + topic + cat[1:] + GENERAL       # with 3 slots, a real milestone (#PottyTraining) beats a generic
     seen, res = set(), []
     for t in out:
         k = t.lower()
         if k not in seen:
             seen.add(k)
             res.append(t)
-    res = res[: n - (2 if short else 1)] + [BRAND] + (["#Shorts"] if short else [])
-    return res
+    return res[: n - 1] + ["#Shorts"] if short else res[:n]
 
 
 def line(category: str, script: dict | None, short: bool = False, today: date | None = None) -> str:

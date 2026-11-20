@@ -16,7 +16,11 @@ def test_title_drops_channel_name_and_fallback_leads_with_the_story(monkeypatch)
         return {"title": "The Clever Fox & the Rooster 🦊 Bedtime Story for Kids | Hoppy Hop Hop", "tags": []}, None
     monkeypatch.setattr(meta, "complete_json", fake)
     m = meta.build(_script(), {"channel_name": "Hoppy Hop Hop"})
-    assert m["title"] == "The Clever Fox & the Rooster 🦊 Bedtime Story for Kids"
+    assert m["title"] == "The Clever Fox & the Rooster 🦊 Bedtime Story"          # brand off, under 50 chars
+    assert meta.fit_title("Colors & Shapes with Hoppy 🎨 Fun Preschool Learning for Toddlers and Kids") == \
+        "Colors & Shapes with Hoppy 🎨"
+    assert meta.fit_title("Why Is This Bigger? Counting Song for Preschoolers and Toddlers Too") == "Why Is This Bigger? Counting Song for Preschoolers"
+    assert meta.fit_title("Learn Colors with Mimi") == "Learn Colors with Mimi"
     assert m["playlist"].startswith("📖 Fables & Bedtime Stories")
 
     def boom(*a, **k):

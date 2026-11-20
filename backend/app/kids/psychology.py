@@ -75,7 +75,7 @@ PRINCIPLES: list[dict] = [
     {"id": "ritual", "name": "Same opening, same goodbye",
      "why": "Predictable routines make young children feel safe and let them anticipate (and join in). Long-running "
             "preschool shows open and close the same way every time.",
-     "how": "Every episode starts with the channel's theme jingle + hello ritual and ends with the goodbye song."},
+     "how": "Every episode opens on the same hello ritual in the action and ends with the theme jingle + goodbye song."},
     {"id": "participation", "name": "Ask, then wait",
      "why": "Direct questions followed by a real pause turn watching into doing; children who answered out loud "
             "showed more engagement and problem solving (Blue's Clues studies).",

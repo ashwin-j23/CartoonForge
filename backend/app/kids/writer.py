@@ -116,8 +116,10 @@ def write_segment(seg: dict, plan: dict, category: dict, band_id: str, prev_tail
     kind = seg["kind"]
     extra = {
         "hello": "THE HOOK (most viewers decide in the first 10 seconds): AT MOST 4 short lines, about 12 seconds. "
-                 "Line 1 teases the most exciting moment of today, exactly what the title promises ('Today Bo has a "
-                 "GIANT feast to share!'). Line 2 is Sunny's catchphrase "
+                 "The episode opens straight on this line (no title card): Line 1 is said with high energy and is an "
+                 "excited look-and-question that NAMES the exact thing the title promises, so the child sees it in the "
+                 "first 5 seconds ('Look at all this yummy food! Who wants to share with Bo?', 'Look, a dinosaur bone! "
+                 "Can you find it?'). Line 2 is Sunny's catchphrase "
                  f"\"{cast.CAST['sunny']['catchphrase']}\". Then ONE line saying what we'll do, and go. NO roll call of "
                  "friends, no 'how are you', no long welcome: the friends say hello inside the action.",
         "goodbye": "Recap one thing we learned, praise the child's effort (listening, counting, singing), a calm "
@@ -291,7 +293,7 @@ def _top_up(segments: list[dict], plan: dict, cat: dict, band_id: str, lang: str
 
     def shortfall(i):
         planned = float((outl[i] if i < len(outl) else {}).get("minutes") or 1.5) * 60
-        return planned - template_seconds([segments[i]], band_id) + 6.9          # minus the fixed jingle/end card
+        return planned - template_seconds([segments[i]], band_id) + 3.8          # minus the fixed lead-in/end card
 
     for _ in range(4):                                       # at most 4 extensions per episode (AI quota)
         need = .95 * target - est
@@ -387,7 +389,7 @@ def template_seconds(segs: list[dict], band_id: str) -> float:
     band's length, sung lines on the beat grid, 0.9 s segment gaps, the theme jingle and the end card.
     (episode.estimate_audio assumes the band's slower target wpm, so its preview runs ~30% long for these voices.)"""
     b = psychology.band(band_id)
-    t = 3.5 + 3.4                     # end card + short opening jingle
+    t = 3.5 + 0.3                     # end card + the hook starts at 0.3 s (no opening jingle)
     for i, seg in enumerate(segs):
         t += .9 if i else 0
         for sc in seg["scenes"]:

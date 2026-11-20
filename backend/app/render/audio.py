@@ -1,7 +1,7 @@
 """The episode soundtrack and its timeline.
 
 Voice every line in its character's voice, then lay everything on one clock:
-  theme jingle → segments (with a soft whoosh between) → slow theme reprise.
+  hook (in the action, no title card) → segments (with a soft whoosh between) → slow theme reprise.
 Question lines are followed by a real silence for the child to answer (age-based) with soft ticks; answers get
 a chime. Song lines snap to the bars of the backing track, so the chant sits on the beat. Background music is
 ducked under speech. Returns the timeline the renderer animates from (who talks when, mouth openness per
@@ -124,10 +124,16 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
     segs_tl: list[dict] = []
     engines: set[str] = set()
 
-    jingle = music.theme(channel, short=True)       # short at the top: content starts ~4 s sooner
-    jingle_len = len(jingle) / SR
-    t = jingle_len - 0.5
-    regions.append({"start": 0, "end": jingle_len, "kind": "theme"})
+    # The episode opens IN the action (hook line at 0.3 s): no logo/title card at the top. Viewers from Suggested
+    # decide in 2-5 s and the analytics showed them leaving during the card. The full jingle still closes every
+    # episode (the ritual), and 'opening_jingle' brings the short card back.
+    if settings.get("opening_jingle", False):
+        jingle = music.theme(channel, short=True)
+        jingle_len = len(jingle) / SR
+        t = jingle_len - 0.5
+        regions.append({"start": 0, "end": jingle_len, "kind": "theme"})
+    else:
+        jingle, jingle_len, t = None, 0.0, 0.3
 
     guests = {g["id"]: g for g in script.get("characters") or [] if g.get("id")}
 
@@ -218,7 +224,8 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
             x[-f:] *= np.linspace(1, 0, f)[:, None]
         mus[i:i + len(x)] += x * gain
 
-    put(jingle, 0, 0.9, 0.01)
+    if jingle is not None:
+        put(jingle, 0, 0.9, 0.01)
     put(outro, regions[-1]["start"], 0.8, 0.05)
     for r in regions:
         dur = r["end"] - r["start"]

@@ -76,6 +76,7 @@ DEFAULTS: dict = {
     "shorts_per_week": 3,                 # Shorts cut from the week's episodes (1-2 each: song first, then a lively bit)
     "book_series": False,                 # automatic book series: next story of a book each day (app/kids/series.py)
     "book_series_per_day": 1,             # how many of the daily episodes come from the book series
+    "opening_jingle": False,              # False = open straight on the hook line (no logo/title card at the top)
     "compilation_weekly": True,           # weekly long compilation of the best episodes (watch time)
     "compilation_minutes": 45,
     "compilation_weekday": 5,             # 5 = Saturday (weekend family viewing)                  # 0.667 = 1280x720 render (2.2x faster)
