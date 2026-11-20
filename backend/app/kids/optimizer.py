@@ -20,7 +20,7 @@ from ..settings import app_settings
 
 ARMS = {
     "pace": ["calm", "lively", "rapid"],
-    "minutes": [10, 12, 14],
+    "minutes": [6, 7, 8],                              # short episodes finish; the 7.5-min one won
     "thumb": ["face", "object", "duo"],
     "title": ["search", "character", "question"],
     "style": ["classic", "paper", "comic", "pixel", "anime", "ps2", "risograph"],

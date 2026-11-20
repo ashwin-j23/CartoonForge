@@ -1,4 +1,4 @@
-"""Writer: a 10-15 minute episode in two passes.
+"""Writer: a 6-8 minute episode (target_minutes) in two passes.
 
 1. Outline — the segment plan (blueprint from the category, minutes per segment, wonder question, key words).
 2. Segments — each segment written on its own (long-form doesn't fit one model reply reliably), with the

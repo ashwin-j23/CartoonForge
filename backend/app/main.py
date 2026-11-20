@@ -1003,7 +1003,7 @@ def get_settings():
 def put_settings(body: dict):
     clean = {k: v for k, v in body.items() if k in DEFAULTS}
     if "target_minutes" in clean:
-        clean["target_minutes"] = max(10, min(15, float(clean["target_minutes"])))
+        clean["target_minutes"] = max(5, min(15, float(clean["target_minutes"])))
     if "pace" in clean and clean["pace"] not in (*psychology.PACES, "auto"):
         raise HTTPException(400, "pace must be calm, lively, rapid or auto")
     if "palette" in clean and clean["palette"] != "auto":

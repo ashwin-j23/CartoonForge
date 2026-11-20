@@ -31,9 +31,9 @@ DEFAULTS: dict = {
     "trend_share": 0.6,                   # share of new episodes taken from the trend analyser (rest = balanced mix)
     "variety_max": 0.32,                  # block a script whose lines overlap > 32% with a recent one (inauthentic-content guard)
     "ai_backgrounds": False,              # illustrated backgrounds from an AI image model (Gemini or OpenAI key; ~$0.04 each)
-    "target_minutes": 12,                 # 10-15 minute episodes
+    "target_minutes": 7,                  # 6-8 minutes: the best video is 7.5 min; long ones lost viewers early
     "age_band": "preschool",              # default audience: toddler | preschool | early | big (see kids/psychology.py)
-    "category_mix": {},                   # category -> weight override (empty = planner's balanced mix)
+    "category_mix": {"feelings": 1.8, "stories": 1.8, "bedtime": 1.6},   # what won: sharing stories, fables, bedtime
     "youtube_privacy": "public",
     "made_for_kids": True,                # COPPA: must stay True for content aimed at children
     "ai_disclosure": False,               # YouTube's synthetic-media label (needed only for realistic content)
@@ -73,7 +73,7 @@ DEFAULTS: dict = {
     "growth_cta": True,                   # one parent-directed subscribe line at the end + description + end card
     "cta_line": "Grown-ups, tap subscribe so we can play again soon!",
     "shorts_from_episodes": True,         # every episode's song becomes a vertical Short (discovery)
-    "shorts_per_week": 3,                 # Shorts cut from the week's episodes (1-2 each: song first, then a lively bit)
+    "shorts_per_week": 7,                 # about a Short a day, cut from the week's episodes (song first, then lively bits)
     "book_series": False,                 # automatic book series: next story of a book each day (app/kids/series.py)
     "book_series_per_day": 1,             # how many of the daily episodes come from the book series
     "opening_jingle": False,              # False = open straight on the hook line (no logo/title card at the top)

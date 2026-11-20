@@ -44,14 +44,17 @@ def test_milestone_topics_get_their_hashtags():
     assert "#PottyTraining" in tags and "#CleanUpSong" in tags
 
 
-def test_about_three_shorts_a_week():
+def test_about_a_short_a_day_never_a_repeat_clip():
     db = get_db()
     for e in db.query("episodes", eq={"kind": "short"}, limit=500):
         db.update("episodes", e["id"], {"kind": "short-old"})
-    assert pipeline.shorts_wanted("a") == 2                      # first episode of the week: song + lively bit
-    db.insert("episodes", {"kind": "short", "parent_id": "a"})
-    db.insert("episodes", {"kind": "short", "parent_id": "a"})
-    assert pipeline.shorts_wanted("b") == 1                      # second episode: one more = 3 that week
+    assert pipeline.shorts_wanted("a") == 4                      # first episode of the week: 4 cuts
+    for _ in range(4):
+        db.insert("episodes", {"kind": "short", "parent_id": "a"})
+    assert pipeline.shorts_wanted("b") == 3                      # second episode: 3 more = 7 that week
+    two = db.insert("episodes", {"kind": "episode", "song_regions": [{"start": 100, "end": 190}],
+                                 "timeline": [{"kind": "story", "start": 20, "end": 60}]})
+    assert pipeline.shorts_wanted(two["id"]) == 2                # only 2 distinct cuts -> 2 Shorts, no duplicate
     p = {"song_regions": [{"start": 100, "end": 190}], "timeline": [{"kind": "story", "start": 20, "end": 60},
                                                                      {"kind": "game", "start": 110, "end": 150}]}
     cuts = pipeline._short_cuts(p)

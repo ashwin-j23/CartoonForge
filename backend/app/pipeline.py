@@ -513,11 +513,13 @@ def _short_cuts(p: dict) -> list[tuple[float, float, bool]]:
 
 def shorts_wanted(parent_id: str) -> int:
     """Shorts to cut from a newly published episode so the channel posts about `shorts_per_week`:
-    1 or 2 per episode (two long episodes a week -> 2 + 1 = 3 Shorts)."""
+    1-4 per episode (two long episodes a week -> about a Short a day). Shorts are the channel's discovery engine."""
     week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
     others = [e for e in get_db().query("episodes", eq={"kind": "short"}, gte={"created_at": week}, limit=50)
               if e.get("parent_id") != parent_id]
-    return max(1, min(2, int(app_settings().get("shorts_per_week", 3)) - len(others)))
+    parent = get_db().get("episodes", parent_id) or {}
+    distinct = len(_short_cuts(parent)) if parent.get("timeline") or parent.get("song_regions") else 4
+    return max(1, min(4, distinct, int(app_settings().get("shorts_per_week", 7)) - len(others)))   # never a repeat clip
 
 
 def make_short(parent_id: str, n: int = 0) -> dict:
@@ -559,7 +561,7 @@ def make_short(parent_id: str, n: int = 0) -> dict:
         log(f"Short cut from '{p['topic']}' ({end - start:.0f}s)", ep=ep["id"])
         if app_settings().get("autopilot") or p.get("status") in ("published", "approved"):
             at = max(datetime.now(timezone.utc), _parse(p.get("publish_at")) or datetime.now(timezone.utc)) \
-                + timedelta(hours=26 + 48 * n)                       # spread out: day after, then 3 days after
+                + timedelta(hours=26 + 24 * n)                       # one a day from the day after
             ep = db.update("episodes", ep["id"], {"status": "approved", "publish_at": short_slot(at)})
         return ep
     finally:
