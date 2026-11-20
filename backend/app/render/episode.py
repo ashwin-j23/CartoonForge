@@ -5,6 +5,7 @@ RGB into its own ffmpeg, then the chunks are concatenated losslessly and muxed w
 """
 from __future__ import annotations
 
+import math
 import multiprocessing as mp
 import pickle
 import re
@@ -144,12 +145,53 @@ def preview(script: dict, settings: dict, t: float, timeline: list | None = None
 
 
 # ---------------------------------------------------------------- thumbnail
+def _sticker(img: Image.Image, px: int) -> Image.Image:
+    """A thick white outline + soft drop shadow, like a sticker: the subject pops off any background."""
+    from PIL import ImageFilter
+    pad = px * 2
+    a = Image.new("L", (img.width + pad * 2, img.height + pad * 2), 0)
+    a.paste(img.split()[-1], (pad, pad))
+    ring = a.filter(ImageFilter.MaxFilter(px * 2 + 1)).filter(ImageFilter.GaussianBlur(1.2))
+    out = Image.new("RGBA", a.size, (0, 0, 0, 0))
+    shadow = ring.filter(ImageFilter.GaussianBlur(px)).point(lambda v: int(v * .45))
+    out.paste((20, 10, 40, 255), (px // 2, px), shadow)
+    out.paste((255, 255, 255, 255), (0, 0), ring)
+    out.alpha_composite(img.convert("RGBA"), (pad, pad))
+    return out
+
+
+def _burst(W: int, H: int, cx: float, cy: float, base: tuple, rays: int = 14) -> Image.Image:
+    """Saturated radial background: bright centre, sunburst rays, darker edges (the subject is the brightest thing)."""
+    from PIL import ImageDraw, ImageFilter
+    import numpy as np
+    yy, xx = np.mgrid[0:H, 0:W]
+    d = np.hypot((xx - cx) / W, (yy - cy) / H)
+    k = np.clip(1 - d * 1.35, 0, 1)[..., None]
+    b = np.array(base, float)
+    light = 255 - (255 - b) * .3
+    dark = b * .82
+    img = Image.fromarray((dark + (light - dark) * k).astype("uint8"), "RGB").convert("RGBA")
+    rl = Image.new("L", (W, H), 0)
+    dr = ImageDraw.Draw(rl)
+    R = max(W, H) * 1.5
+    for i in range(rays):
+        a0 = 2 * math.pi * i / rays
+        a1 = a0 + math.pi / rays
+        dr.polygon([(cx, cy), (cx + R * math.cos(a0), cy + R * math.sin(a0)), (cx + R * math.cos(a1), cy + R * math.sin(a1))], fill=46)
+    img.paste((255, 255, 255), (0, 0), rl.filter(ImageFilter.GaussianBlur(3)))
+    return img
+
+
 def thumbnail(script: dict, settings: dict, out: Path, size=(1280, 720)) -> Path:
-    """Bright, simple, 1-3 big words. Three styles the optimizer A/B tests (settings._thumb):
-    face = one big happy character + the object; object = the object huge, character small; duo = two friends."""
+    """Made to be clicked on a phone in a busy kids' feed (CTR), still honest: what's in the thumbnail is in the video.
+    Saturated sunburst background in the episode's palette, BIG sticker-outlined subjects, 1-3 huge words.
+    The lead is the character the title names ('Bo Shares a Feast!' shows Bo), else the star.
+    Three layouts the optimizer A/B tests (settings._thumb): face = one big character + the object;
+    object = the object huge with the character pointing at it; duo = two friends."""
     from PIL import ImageEnhance
     from . import sets
     from ..kids import psychology as ps
+    from ..kids.cast import CAST, STAR
     from .styles import set_style
     set_style(settings.get("_style") or (settings.get("art_style") if settings.get("art_style") != "auto" else None))
     from . import palette
@@ -157,44 +199,68 @@ def thumbnail(script: dict, settings: dict, out: Path, size=(1280, 720)) -> Path
                         script.get("age_band", "preschool"))
     style = settings.get("_thumb") or "face"
     W, H = size
+    meta = settings.get("_meta") or {}
     seg = next((s for s in script["segments"] if s["kind"] not in ("hello", "goodbye")), script["segments"][0])
+    speakers = [sc["speaker"] for s in script["segments"] for sc in s["scenes"] if sc["speaker"] != "sunny"]
+    title = f"{meta.get('title', '')} {script.get('title_idea', '')}"
+    named = [cid for cid, c in CAST.items() if cid != "sunny" and re.search(rf"\b{re.escape(c['name'].split()[0])}\b", title)]
+    named.sort(key=lambda cid: title.find(CAST[cid]["name"].split()[0]))
+    lead = named[0] if named else (STAR if STAR in speakers else (speakers[0] if speakers else STAR))
+    second = next((c for c in named[1:] + speakers if c != lead), "mimi" if lead != "mimi" else "pip")
+    from .icons import resolve
+    objs = [sc["card"]["object"] for s in script["segments"] for sc in s["scenes"]
+            if sc.get("card") and sc["card"].get("object") and resolve(sc["card"]["object"])]   # only ones we can draw
+    keys = " ".join(str(k).lower() for k in script.get("key_words") or []) + " " + title.lower()
+    obj = next((o for o in objs if o.lower() in keys), objs[0] if objs else None)   # prefer the one the title is about
+    if style == "object" and not (obj and obj.lower() in title.lower()):
+        style = "face"                      # a huge object only sells the click when the title is about that object
+
+    # background: the episode's set, saturated, under a sunburst centred on the subject
+    focus_x = {"object": .62, "duo": .45}.get(style, .38)
     bg = sets.background(seg.get("set") or "meadow", W, H, min(ps.pace("rapid")["vivid"],
                                                                palette.vivid_cap(script.get("age_band")))).copy()
-    speakers = [sc["speaker"] for s in script["segments"] for sc in s["scenes"] if sc["speaker"] != "sunny"]
-    from ..kids.cast import STAR
-    lead = STAR if STAR in speakers else (speakers[0] if speakers else STAR)      # the star sells the episode
-    second = next((c for c in speakers if c != lead), "mimi")
-    obj = next((sc["card"].get("object") for s in script["segments"] for sc in s["scenes"]
-                if sc.get("card") and sc["card"].get("object")), None)
+    bg = ImageEnhance.Color(bg.convert("RGB")).enhance(1.45).convert("RGBA")
+    burst = _burst(W, H, W * focus_x, H * .58, palette.button())
+    bg = ImageEnhance.Color(Image.blend(bg, burst, .66).convert("RGB")).enhance(1.35).convert("RGBA")
+    border = max(6, H // 90)
+
+    def put(img, cx, bottom=None, cy=None):
+        st = _sticker(img, border)
+        y = int((bottom - st.height) if bottom is not None else cy - st.height / 2)
+        bg.alpha_composite(st, (int(cx - st.width / 2), y))
+
     if style == "object" and obj:
-        ic = icon(obj, int(H * .7))
-        bg.paste(ic, (int(W * .6 - ic.width / 2), int(H * .58 - ic.height / 2)), ic)
-        sp = sprite(lead, int(H * .5), 2, "open", "surprised", "point")
-        bg.paste(sp, (int(W * .02), int(H * .99 - sp.height)), sp)
+        put(icon(obj, int(H * .74)), W * .62, cy=H * .6)
+        put(sprite(lead, int(H * .7), 2, "open", "surprised", "point"), W * .2, bottom=H * 1.06)
     elif style == "duo":
-        for cid, x, arms in ((lead, .2, "wave"), (second, .5, "up")):
-            sp = sprite(cid, int(H * .68), 2, "open", "excited", arms)
-            bg.paste(sp, (int(W * x - sp.width / 2), int(H * .99 - sp.height)), sp)
+        put(sprite(second, int(H * .74), 2, "open", "excited", "up"), W * .62, bottom=H * 1.07)
+        put(sprite(lead, int(H * .8), 2, "open", "excited", "wave"), W * .3, bottom=H * 1.08)   # head below the words
         if obj:
-            ic = icon(obj, int(H * .36))
-            bg.paste(ic, (int(W * .8 - ic.width / 2), int(H * .62 - ic.height / 2)), ic)
+            put(icon(obj, int(H * .34)), W * .86, cy=H * .62)
     else:
-        sp = sprite(lead, int(H * .78), 2, "open", "excited", "wave")
-        bg.paste(sp, (int(W * .05), int(H * .98 - sp.height)), sp)
+        put(sprite(lead, int(H * .98), 2, "open", "excited", "wave"), W * .3, bottom=H * 1.1)
         if obj:
-            ic = icon(obj, int(H * .42))
-            bg.paste(ic, (int(W * .66 - ic.width / 2), int(H * .6 - ic.height / 2)), ic)
+            put(icon(obj, int(H * .5)), W * .76, cy=H * .62)
     words = (script.get("key_words") or [script.get("title_idea", "")])
-    label = _thumb_words(script.get("title_idea") or "", words, (settings.get("_meta") or {}).get("thumb_text", ""))
-    ti = fit_text(label, int(W * .58), int(H * .17), fill=palette.highlight(), stroke=OUT, stroke_w=.12)
-    tx = W * .5 if style == "duo" else W * .68
-    bg.paste(ti, (int(tx - ti.width / 2), int(H * .16 - ti.height / 2)), ti)
-    badge = rounded(int(W * .2), int(H * .09), int(H * .045), palette.button(), outline=(255, 255, 255), width=4)
-    bt = text_img(f"Ages {psychology.band(script['age_band'])['ages']}", int(H * .05), fill=(255, 255, 255), stroke=None)
+    label = _thumb_words(script.get("title_idea") or "", words, meta.get("thumb_text", ""))
+    ti = fit_text(label, int(W * .66), int(H * .24), fill=palette.highlight(), stroke=OUT, stroke_w=.14)
+    ti.putalpha(ti.split()[-1].point(lambda v: v if v > 40 else 0))   # drop the faint haze: no box on bright backgrounds
+    tx = W * .5 if style == "duo" else (W * .62 if style != "object" else W * .55)
+    tx = min(max(tx, ti.width / 2 + W * .02), W * .98 - ti.width / 2)
+    from PIL import ImageFilter
+    pad = border * 4                                   # room for the blur, or the shadow ends in a hard box
+    m = Image.new("L", (ti.width + pad * 2, ti.height + pad * 2), 0)
+    m.paste(ti.split()[-1].point(lambda v: 255 if v > 60 else 0), (pad, pad))
+    sh = Image.new("RGBA", m.size, (20, 10, 40, 0))
+    sh.putalpha(m.filter(ImageFilter.GaussianBlur(border)).point(lambda v: int(v * .55)))
+    bg.alpha_composite(sh, (int(tx - ti.width / 2 + border // 2 - pad), int(H * .15 - ti.height / 2 + border - pad)))
+    bg.alpha_composite(ti, (int(tx - ti.width / 2), int(H * .15 - ti.height / 2)))                      # white fill in letter holes
+    badge = rounded(int(W * .17), int(H * .08), int(H * .04), palette.button(), outline=(255, 255, 255), width=4)
+    bt = text_img(f"Ages {psychology.band(script['age_band'])['ages']}", int(H * .045), fill=(255, 255, 255), stroke=None)
     badge.alpha_composite(bt, ((badge.width - bt.width) // 2, (badge.height - bt.height) // 2))
-    bg.paste(badge, (int(W * .78), int(H * .86)), badge)
-    bg = ImageEnhance.Contrast(bg.convert("RGB")).enhance(1.06)
-    bg.save(out, "JPEG", quality=90)
+    bg.paste(badge, (int(W * .81), int(H * .89)), badge)
+    bg = ImageEnhance.Contrast(bg.convert("RGB")).enhance(1.1)
+    bg.save(out, "JPEG", quality=92)
     return out
 
 
