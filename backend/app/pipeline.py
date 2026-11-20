@@ -372,7 +372,7 @@ BINGE = {   # every video also lands in one of these, so a child who finishes on
     "episode": ("🐰 All Hoppy Hop Hop Episodes | Songs, Stories & Learning for Kids",
                 "Every Hoppy Hop Hop cartoon in one place: songs, bedtime stories, counting, colours, animals and more "
                 "for toddlers and preschoolers. Press play and let Hoppy keep the fun going!"),
-    "short": ("🎵 Hoppy Hop Hop Shorts | Quick Sing-Alongs for Kids",
+    "short": ("🎵 Sing-Along Shorts for Toddlers | Nursery Rhymes & Kids Songs",
               "Short, happy sing-along clips from Hoppy Hop Hop for toddlers and preschoolers."),
 }
 
@@ -422,10 +422,12 @@ def publish(eid: str, force: bool = False) -> dict:
                 except Exception as e:  # noqa: BLE001
                     log(f"Playlist add failed ({title}): {e}", "warn", eid)
         if ep.get("kind", "episode") == "episode" and s.get("shorts_from_episodes", True):
-            try:
-                make_short(eid)
-            except Exception as e:  # noqa: BLE001
-                log(f"Short not made: {e}", "warn", eid)
+            for n in range(shorts_wanted(eid)):           # ~shorts_per_week across the week's episodes
+                try:
+                    make_short(eid, n)
+                except Exception as e:  # noqa: BLE001
+                    log(f"Short not made: {e}", "warn", eid)
+                    break
         return ep
     except Exception as e:  # noqa: BLE001
         log(f"Publish failed: {e}", "error", eid)
@@ -498,27 +500,44 @@ def short_slot(at: datetime) -> str:
     return at.isoformat(timespec="seconds")
 
 
-def make_short(parent_id: str) -> dict:
-    """The episode's song (or its liveliest segment) as a vertical Short that links viewers to the channel."""
+def _short_cuts(p: dict) -> list[tuple[float, float, bool]]:
+    """(start, end, is_song) candidates for Shorts, best first: each song, then the liveliest segments.
+    Cuts start ON the first beat/line (no lead-in): Shorts viewers decide in the first second."""
+    out = [(r["start"], r["end"], True) for r in (p.get("song_regions") or [])]
+    for g in p.get("timeline", []):
+        if g["kind"] in ("movement", "game", "learn", "story", "explore"):
+            if not any(a < g["end"] and g["start"] < b for a, b, _ in out):
+                out.append((g["start"], g["end"], False))
+    return [(s, min(e, s + 58), song) for s, e, song in out] or [(30, 85, False)]
+
+
+def shorts_wanted(parent_id: str) -> int:
+    """Shorts to cut from a newly published episode so the channel posts about `shorts_per_week`:
+    1 or 2 per episode (two long episodes a week -> 2 + 1 = 3 Shorts)."""
+    week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
+    others = [e for e in get_db().query("episodes", eq={"kind": "short"}, gte={"created_at": week}, limit=50)
+              if e.get("parent_id") != parent_id]
+    return max(1, min(2, int(app_settings().get("shorts_per_week", 3)) - len(others)))
+
+
+def make_short(parent_id: str, n: int = 0) -> dict:
+    """Cut number `n` of the episode (its song first, then its liveliest segment) as a vertical Short."""
     from .render import episode as epr
     db = get_db()
     p = db.get("episodes", parent_id)
     if not p or not p.get("video_url"):
         raise ValueError("Parent episode has no video")
-    songs = p.get("song_regions") or []
-    if songs:
-        start, end = songs[0]["start"] - 1.0, songs[0]["end"]
-    else:
-        seg = next((g for g in p.get("timeline", []) if g["kind"] in ("movement", "game", "learn")), None) or {"start": 30, "end": 85}
-        start, end = seg["start"], seg["end"]
-    end = min(end, start + 58)
-    work = config.WORK_DIR / f"short-{parent_id}"
+    cuts = _short_cuts(p)
+    start, end, song = cuts[min(n, len(cuts) - 1)]
+    songs = [1] if song else []
+    work = config.WORK_DIR / f"short-{parent_id}-{n}"
     work.mkdir(parents=True, exist_ok=True)
     try:
         src = storage.fetch(p["video_url"])
-        out = epr.cut_short(src, max(0, start), end, work / "short.mp4", p["meta"]["title"])
-        url = storage.put(out, f"{parent_id}/short-{int(time.time())}.mp4", "video/mp4")
         m = p.get("meta") or {}
+        hook = m.get("thumb_text") or (p['script'] or {}).get('title_idea') or p['topic']
+        out = epr.cut_short(src, max(0, start), end, work / "short.mp4", hook)
+        url = storage.put(out, f"{parent_id}/short-{n}-{int(time.time())}.mp4", "video/mp4")
         cat = categories.get(p["category"])
         from .kids import hashtags
         idea = (p['script'] or {}).get('title_idea') or p['topic']
@@ -530,7 +549,7 @@ def make_short(parent_id: str) -> dict:
                 f"\"{m.get('title', idea)}\" is on our channel.\n\n{(m.get('description') or '').split(chr(10))[0]}\n\n"
                 + hashtags.line(p["category"], p.get("script"), short=True))
         ep = db.insert("episodes", {
-            "kind": "short", "parent_id": parent_id, "status": "review", "category": p["category"], "topic": p["topic"],
+            "kind": "short", "parent_id": parent_id, "short_n": n, "status": "review", "category": p["category"], "topic": p["topic"],
             "age_band": p["age_band"], "language": p.get("language", "en"), "script": p.get("script"),
             "meta": {"title": title, "description": desc, "tags": (m.get("tags") or [])[:10] + ["shorts"],
                      "category_id": "10" if songs else m.get("category_id", "27")},
@@ -539,7 +558,8 @@ def make_short(parent_id: str) -> dict:
             "qa": {"ok": True, "checks": [{"name": "Cut from approved episode", "ok": True, "detail": parent_id}]}})
         log(f"Short cut from '{p['topic']}' ({end - start:.0f}s)", ep=ep["id"])
         if app_settings().get("autopilot") or p.get("status") in ("published", "approved"):
-            at = max(datetime.now(timezone.utc), _parse(p.get("publish_at")) or datetime.now(timezone.utc)) + timedelta(hours=26)
+            at = max(datetime.now(timezone.utc), _parse(p.get("publish_at")) or datetime.now(timezone.utc)) \
+                + timedelta(hours=26 + 48 * n)                       # spread out: day after, then 3 days after
             ep = db.update("episodes", ep["id"], {"status": "approved", "publish_at": short_slot(at)})
         return ep
     finally:

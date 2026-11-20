@@ -21,7 +21,7 @@ def test_future_slot_is_uploaded_as_youtube_scheduled_and_past_slot_goes_public(
     monkeypatch.setattr(youtube, "upload", lambda *a, **k: calls.append((a[4], k.get("publish_at"))) or {"id": "v1", "url": "u", "privacy": a[4]})
     monkeypatch.setattr(youtube, "ensure_playlist", lambda *a, **k: "p")
     monkeypatch.setattr(youtube, "add_to_playlist", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "make_short", lambda eid: None)
+    monkeypatch.setattr(pipeline, "make_short", lambda eid, n=0: None)
     for e in get_db().query("episodes", eq={"status": "approved"}):
         get_db().update("episodes", e["id"], {"status": "rejected"})
     now = datetime.now(timezone.utc)

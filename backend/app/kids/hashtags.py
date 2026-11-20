@@ -40,6 +40,10 @@ TOPICAL = [
     (("thank you", "thankful", "grateful"), "#ThankYouSong"),
     (("brush", "teeth"), "#BrushYourTeeth"),
     (("sing", "song"), "#SingAlong"),
+    (("clean up", "tidy up", "tidy"), "#CleanUpSong"),
+    (("potty",), "#PottyTraining"),
+    (("bedtime routine", "time for bed", "bath, brush"), "#BedtimeRoutine"),
+    (("please", "excuse me", "manners"), "#GoodManners"),
 ]
 
 # (first month-day, last month-day, words the script must contain, hashtags)

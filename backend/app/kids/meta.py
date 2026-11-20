@@ -27,6 +27,23 @@ _PROMISES = {
 }
 
 
+# category -> (the phrase parents search, the searchable series playlist it lands in)
+SEARCH = {
+    "bedtime": ("Bedtime Story for Toddlers", "🌙 Bedtime Stories for Toddlers | Calm Sleep Stories"),
+    "stories": ("Bedtime Story for Kids", "📖 Fables & Bedtime Stories for Kids | Aesop & Folk Tales"),
+    "books": ("Story Time for Kids", "📚 Storybook Classics Read Aloud for Kids"),
+    "music_move": ("Nursery Rhymes & Kids Songs", "🎵 Nursery Rhymes & Sing-Alongs for Toddlers"),
+    "habits": ("Healthy Habits for Toddlers", "🪥 Toddler Routines: Clean Up, Potty, Bath & Bedtime"),
+    "feelings": ("Sharing & Manners for Toddlers", "💛 Sharing, Manners & Feelings for Toddlers"),
+    "colors_shapes": ("Learn Colors for Toddlers", "🌈 Learn Colors & Shapes for Toddlers"),
+    "numbers": ("Counting Song for Toddlers", "🔢 Counting Songs & Numbers for Toddlers"),
+    "abc": ("ABC Song for Toddlers", "🔤 ABC Songs & Phonics for Toddlers"),
+    "animals": ("Animal Sounds for Toddlers", "🐘 Animal Songs & Sounds for Toddlers"),
+    "vehicles": ("Trucks & Vehicles for Kids", "🚒 Trucks, Trains & Vehicles for Kids"),
+    "dinosaurs": ("Dinosaurs for Kids", "🦕 Dinosaur Songs & Stories for Kids"),
+}
+
+
 def _script_text(script: dict) -> str:
     import json
     return json.dumps(script, ensure_ascii=False).lower()
@@ -60,14 +77,18 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
     b = psychology.band(script["age_band"])
     name = settings.get("channel_name", "Hoppy Hop Hop")
     style = (settings.get("_variant") or {}).get("title", "search")
+    phrase, series = SEARCH.get(script["category"], (f"{cat['name'].split('&')[0].strip()} for Kids", ""))
+    # the most exciting part first (what the child will SEE), then the search phrase; never the channel name
     style_rule = {
-        "search": "START with a high-search phrase parents type",
-        "character": "START with our character doing something ('Pip Learns to Count!'), then the search phrase",
+        "search": f"START with the story's exciting subject in 2-6 words ('The Clever Fox & the Rooster 🦊'), then the "
+                  f"search phrase ('{phrase}')",
+        "character": "START with the exciting moment our character has ('Bo's Giant Feast! 🍉'), then the search phrase "
+                     f"('{phrase}')",
         "question": "START with a curious question a child would ask ('Why Is the Sky Blue?'), then the search phrase",
-    }.get(style, "START with a high-search phrase parents type")
+    }.get(style, f"START with the story's exciting subject, then '{phrase}'")
     src = script.get("source")
     fallback = {
-        "title": f"{script.get('title_idea') or script['topic']} | {cat['name']} for Kids {b['ages']} | {name}"[:100],
+        "title": f"{script.get('title_idea') or script['topic']} {cat['emoji']} {phrase}"[:100],
         "hook": script.get("summary", ""),
         "tags": [cat["name"], "kids songs", "learning for kids", "preschool", "toddler learning",
                  "nursery rhymes", "educational videos for kids", name] + script.get("key_words", []),
@@ -75,7 +96,7 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
     try:
         data, _ = complete_json(
             "You write YouTube metadata for a trusted kids channel. Parents read it. Honest, warm, specific, no "
-            "clickbait lies, no ALL CAPS, at most 2 emojis. Titles lead with the exact phrases parents search "
+            "clickbait lies, no ALL CAPS, at most 2 emojis. Never put the channel name in the title. Titles lead with the exact phrases parents search "
             "(e.g. 'Counting Song', 'Learn Colors', 'Bedtime Story', 'Nursery Rhymes', 'for Toddlers'), but ONLY phrases "
             "that truly describe THIS episode: never name a skill (colors, counting, ABC...) the episode doesn't teach. "
             "JSON only.",
@@ -84,13 +105,15 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
             f"Return {{\"title\": str (max 70 chars; {style_rule}, e.g. one of: "
             f"{', '.join(SEO_KEYWORDS[:14])}; then what the child learns + who it's for, e.g. 'Counting Song "
             "🍎 Count to 10 with Pip | Learning for Toddlers'), \"hook\": str (2 warm sentences for parents), "
-            "\"learning_goals\": [3 short bullets], \"thumb_text\": str (1-3 BIG words for the thumbnail, e.g. 'Count to 10!'), "
+            "\"learning_goals\": [3 short bullets], \"thumb_text\": str (2-3 BIG words a toddler's parent gets at a glance on a "
+            "phone, e.g. 'Count to 10!', 'Sleepy Fox'), "
             "\"tags\": [12-15 search phrases parents type]}",
             temperature=0.6, max_tokens=900)
         meta = {**fallback, **{k: v for k, v in data.items() if v}}
     except (LLMError, ValueError):
         meta = dict(fallback)
-    meta["title"] = re.sub(r"\s+", " ", str(meta["title"])).strip()[:100]
+    meta["title"] = re.sub(r"\s+", " ", str(meta["title"])).strip()
+    meta["title"] = re.sub(rf"\s*[|\-–]\s*{re.escape(name)}\s*$", "", meta["title"], flags=re.I)[:100]   # no branding
     if any(i["level"] == "block" for i in safety.check_title(meta["title"])) or unfounded(meta["title"], script):
         meta["title"] = fallback["title"]
     if unfounded(meta.get("thumb_text", ""), script):
@@ -124,7 +147,7 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
     meta["description"] = "\n".join(parts)[:4900]
     meta["tags"] = hashtags.clean_tags(meta.get("tags", []), name)[:20]      # never cut mid-word, no brand typos
     meta["category_id"] = cat["yt"]
-    meta["playlist"] = f"{cat['emoji']} {cat['name']} | {name}"
+    meta["playlist"] = series or f"{cat['emoji']} {cat['name']} | {name}"
     return meta
 
 

@@ -271,8 +271,9 @@ STOP = {"to", "the", "and", "with", "of", "a", "an", "in", "on", "for", "at", "i
 
 def _thumb_words(title: str, keys: list[str], given: str = "") -> str:
     """1-3 big words. Never end on 'to/the/and' (a cut-off phrase looks broken)."""
-    if given:
+    if given and len(given.split()) <= 3:
         return given[:22]
+    title = given or title
     t = re.sub(r"\(.*?\)|\|.*$|[^\w\s'!?-]", "", title).strip()
     words = t.split()[:3]
     while words and words[-1].lower() in STOP:
@@ -281,14 +282,37 @@ def _thumb_words(title: str, keys: list[str], given: str = "") -> str:
 
 
 # ---------------------------------------------------------------- Shorts (growth)
+def short_caption(text: str, out: Path) -> Path | None:
+    """The Short's hook words as a big yellow sticker caption (PNG), two lines at most, 3-5 words."""
+    words = re.sub(r"\(.*?\)|\|.*$|#\S+", "", str(text or "")).split()[:4]
+    while words and words[-1].lower().strip("&,") in STOP | {"&", ""}:      # never end on 'and the'
+        words.pop()
+    if not words:
+        return None
+    lines = [" ".join(words)] if len(words) <= 3 else [" ".join(words[:len(words) // 2 + 1]), " ".join(words[len(words) // 2 + 1:])]
+    imgs = [fit_text(ln, 980, 150, 60, fill=(255, 221, 0)) for ln in lines]
+    im = Image.new("RGBA", (1080, sum(i.height for i in imgs) + 20 * (len(imgs) - 1)), (0, 0, 0, 0))
+    y = 0
+    for i in imgs:
+        im.alpha_composite(i, ((1080 - i.width) // 2, y))
+        y += i.height + 20
+    im.save(out)
+    return out
+
+
 def cut_short(video: Path, start: float, end: float, out: Path, title: str) -> Path:
-    """Vertical 1080x1920 Short: the 16:9 picture centred over a blurred, zoomed copy of itself."""
+    """Vertical 1080x1920 Short: the 16:9 picture centred over a blurred, zoomed copy of itself, the hook words
+    dropping in from the top on frame one (Shorts viewers decide in the first second: motion + words, no fade-in)."""
     dur = max(10.0, min(58.0, end - start))
+    cap = short_caption(title, out.with_name("caption.png"))
     vf = ("[0:v]split=2[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=24:2[bg];"
-          "[b]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2-140")
-    subprocess.run([config.FFMPEG, "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{dur:.2f}", "-i", str(video),
-                    "-filter_complex", vf, "-c:v", "libx264", "-preset", config.X264_PRESET, "-crf", "21",
-                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)], check=True)
+          "[b]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2-140" + ("[v];[v][1:v]overlay=0:'min(150,-h+(150+h)*t/0.35)'"
+                                                                    if cap else "") + "[out]")
+    ins = ["-ss", f"{start:.2f}", "-t", f"{dur:.2f}", "-i", str(video)] + (["-loop", "1", "-t", f"{dur:.2f}", "-i", str(cap)] if cap else [])
+    subprocess.run([config.FFMPEG, "-y", "-v", "error", *ins,
+                    "-filter_complex", vf, "-map", "[out]", "-map", "0:a?", "-c:v", "libx264", "-preset", config.X264_PRESET, "-crf", "21",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", str(out)],
+                   check=True)
     return out
 
 
