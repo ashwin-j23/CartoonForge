@@ -121,3 +121,18 @@ def test_auto_review_lengthens_a_short_render(monkeypatch):
     automation.auto_review()
     got = db.get("episodes", ep["id"])
     assert got["status"] == "scripted" and got["script"]["longer"] and got["auto_fixes"] == 1
+
+
+def test_breakout_gets_one_sequel(monkeypatch):
+    db = get_db()
+    for e in db.query("episodes", limit=500):
+        db.delete("episodes", e["id"])
+    for v in (2, 3, 4, 5, 6):
+        _good_ep(status="published", stats={"views": v}, published_at="2026-01-01T00:00:00+00:00")
+    hit = _good_ep(status="published", category="habits", stats={"views": 2000},
+                   meta={"title": "Bo Shares a Feast!"}, published_at="2026-01-01T00:00:00+00:00")
+    assert [e["id"] for e in pipeline.breakouts()] == [hit["id"]]
+    assert pipeline._follow_breakouts(3) == 1
+    seq = db.get("episodes", db.get("episodes", hit["id"])["sequel_id"])
+    assert seq["category"] == "habits" and seq["sequel_of"] == hit["id"] and "Bo Shares a Feast" in seq["angle"]
+    assert pipeline.breakouts() == []                     # one sequel each

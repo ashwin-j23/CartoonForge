@@ -673,6 +673,40 @@ def _recover():
         log(f"Recovered stuck episode ({e['status']} → {back})", "warn", e["id"])
 
 
+BREAKOUT_MIN_VIEWS = 300       # a video this far ahead of the rest gets a sequel: Suggested traffic follows a series
+BREAKOUT_X_MEDIAN = 5
+
+
+def breakouts() -> list[dict]:
+    """Published episodes with views >= max(300, 5x the channel median) that have no sequel yet, best first."""
+    pub = [e for e in get_db().query("episodes", eq={"status": "published"}, limit=500)
+           if e.get("kind", "episode") == "episode" and (e.get("stats") or {}).get("views") is not None]
+    if len(pub) < 5:
+        return []
+    views = sorted(int(e["stats"]["views"]) for e in pub)
+    bar = max(BREAKOUT_MIN_VIEWS, BREAKOUT_X_MEDIAN * views[len(views) // 2])
+    hits = [e for e in pub if int(e["stats"]["views"]) >= bar and not e.get("sequel_id")]
+    return sorted(hits, key=lambda e: -int(e["stats"]["views"]))
+
+
+def _follow_breakouts(room: int) -> int:
+    """Plan one sequel per breakout (at most `room`): same category, same lead and theme, a new story."""
+    made = 0
+    for hit in breakouts()[:room]:
+        title = (hit.get("meta") or {}).get("title") or hit.get("topic")
+        lesson = (hit.get("script") or {}).get("lesson") or hit.get("topic")
+        ep = create(category=hit["category"], age_band=hit.get("age_band"),
+                    why=f"Sequel to a breakout ({hit['stats']['views']} views): {title[:60]}")
+        get_db().update("episodes", ep["id"], {
+            "sequel_of": hit["id"],
+            "angle": (f"SEQUEL to our most-watched video '{title}'. Children loved it: keep the same lead character, "
+                      f"the same theme ({lesson}) and the same feel, but tell a NEW story with a new setting and a new "
+                      "song. The title should follow the same pattern: lead character doing something + what kids learn.")})
+        get_db().update("episodes", hit["id"], {"sequel_id": ep["id"]})
+        made += 1
+    return made
+
+
 def _keep_full():
     s = app_settings()
     if not s.get("auto_generate", True):
@@ -698,6 +732,8 @@ def _keep_full():
                     room = max(0, fits)
         except Exception:  # noqa: BLE001
             pass
+    if room and has_ai():
+        room -= _follow_breakouts(room)
     if room and s.get("book_series") and has_ai():
         from .kids import series
         book_want = min(want, int(s.get("book_series_per_day", 1)) * 2)

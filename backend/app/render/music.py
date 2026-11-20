@@ -317,19 +317,23 @@ def _hook_words(channel: str) -> list[str]:
     return words
 
 
-def theme(channel: str, slow: bool = False, voices: bool = True) -> np.ndarray:
+def theme(channel: str, slow: bool = False, voices: bool = True, short: bool = False) -> np.ndarray:
     """The channel's jingle: a sing-along hook on the channel name.
 
     'Hop-py! Hop! Hop!' on a rising call (sol-sol, do, mi) with a boing on every 'Hop', then the same call a
     step higher with a second voice joining (a little kids' chorus), clap-clap, and a sparkle. Always the same
-    notes, so it becomes the channel's signature sound. Original melody (no borrowed tunes)."""
+    notes, so it becomes the channel's signature sound. Original melody (no borrowed tunes).
+    short=True: the call once (~3.9 s instead of ~7 s) for the top of an episode: viewers from Suggested decide in
+    the first seconds, so the content starts sooner; the full jingle still closes every episode."""
     bpm = 92 if slow else 120
     beat = 60 / bpm
     lead = .12                                                    # room for the first word's soft 'H'
-    bus = Bus(lead + 8 * beat + 3.0)
+    nb = 4 if short else 8                                        # beats of jingle
+    bus = Bus(lead + nb * beat + (1.8 if short else 3.0))
     root = 60                                                     # C
     words = _hook_words(channel)
     calls = [[7, 12, 16, 19][: len(words)], [9, 14, 17, 21][: len(words)]]   # rising call, then a step higher
+    calls = calls[:1] if short else calls
     beats = [0, 1, 2, 2.5][: len(words)]
     nrnd = np.random.default_rng(3)
     for phrase, notes in enumerate(calls):
@@ -354,20 +358,20 @@ def theme(channel: str, slow: bool = False, voices: bool = True) -> np.ndarray:
                     a = _sung(words[w], voice, semis + (2 if phrase else 0))
                     if a is not None:
                         bus.add(a, max(0.0, at - _vowel_at(a)), gain * (.85 if slow else 1), pan)
-    for i, deg in enumerate([0, 5]):                              # I ... IV (bright, lifts into the answer)
+    for i, deg in enumerate([0] if short else [0, 5]):            # I ... IV (bright, lifts into the answer)
         ch = _chord(root, deg)
         bus.add(pad_voice([hz(m) for m in ch], beat * 4.3, 1.0), lead + i * beat * 4, .5, -.6)
         bus.add(pad_voice([hz(m) for m in ch], beat * 4.3, 1.004), lead + i * beat * 4, .5, .6)
         bus.add(bass(hz(ch[0] - 12), beat * 4), lead + i * beat * 4, .75, 0)
     if not slow:
-        for k in range(8):
+        for k in range(nb):
             if k % 2 == 0:
                 bus.add(kick(), lead + k * beat, .6, 0)
             bus.add(hat(nrnd), lead + k * beat + beat / 2, .7, .4)
-        for b in (3, 3.5, 7, 7.5):                                # clap-clap kids can copy
+        for b in ((3, 3.5) if short else (3, 3.5, 7, 7.5)):       # clap-clap kids can copy
             bus.add(clap(nrnd), lead + b * beat, .7, 0)
     for j, n in enumerate([24, 28, 31, 36]):
-        bus.add(glock(hz(root + n), 1.2), lead + 8 * beat - .05 + j * .07, .3, -.5 + j * .33)
+        bus.add(glock(hz(root + n), 1.2), lead + nb * beat - .05 + j * .07, .3, -.5 + j * .33)
     out = reverb_stereo(bus.l, bus.r, wet=.22, seconds=1.6)
     peak = float(np.max(np.abs(out)) or 1)
     return (out / peak * .85).astype(np.float32)

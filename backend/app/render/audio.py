@@ -124,7 +124,7 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
     segs_tl: list[dict] = []
     engines: set[str] = set()
 
-    jingle = music.theme(channel)
+    jingle = music.theme(channel, short=True)       # short at the top: content starts ~4 s sooner
     jingle_len = len(jingle) / SR
     t = jingle_len - 0.5
     regions.append({"start": 0, "end": jingle_len, "kind": "theme"})

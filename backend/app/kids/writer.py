@@ -87,7 +87,7 @@ def outline(category: dict, topic: str, band_id: str, minutes: float, lang: str 
             "\"segments\": [{\"kind\": str, \"title\": str (2-4 words, shown as a chapter), \"set\": str, "
             "\"minutes\": number, \"wonder\": str (the question that opens it), \"beats\": [3-6 short story/teaching beats], "
             "\"song_idea\": str (only for song)}]}\n"
-            f"Minutes must add up to about {minutes:.0f}. hello ≈ 0.6, goodbye ≈ 0.6, recap ≈ 1, songs ≈ 1.2-1.6, "
+            f"Minutes must add up to about {minutes:.0f}. hello ≈ 0.2, goodbye ≈ 0.6, recap ≈ 1, songs ≈ 1.2-1.6, "
             f"others share the rest (each 1.5-{b['segment'] + 0.6:.1f}).")
     data, _ = complete_json(system, user + "\nReturn compact (minified) JSON.", temperature=0.8, max_tokens=6000,
                             salvage=False)
@@ -115,10 +115,11 @@ def write_segment(seg: dict, plan: dict, category: dict, band_id: str, prev_tail
               "by a character to a child watching. Reply with JSON only.")
     kind = seg["kind"]
     extra = {
-        "hello": "THE HOOK (first 10 seconds decide if a child stays): open with the most exciting moment of today "
-                 "as a quick tease ('Today… a dinosaur egg is going to hatch!'), THEN Sunny's catchphrase "
-                 f"\"{cast.CAST['sunny']['catchphrase']}\", greet every friend by name, friends wave, say what we'll do. "
-                 "Short, energetic lines.",
+        "hello": "THE HOOK (most viewers decide in the first 10 seconds): AT MOST 4 short lines, about 12 seconds. "
+                 "Line 1 teases the most exciting moment of today, exactly what the title promises ('Today Bo has a "
+                 "GIANT feast to share!'). Line 2 is Sunny's catchphrase "
+                 f"\"{cast.CAST['sunny']['catchphrase']}\". Then ONE line saying what we'll do, and go. NO roll call of "
+                 "friends, no 'how are you', no long welcome: the friends say hello inside the action.",
         "goodbye": "Recap one thing we learned, praise the child's effort (listening, counting, singing), a calm "
                    "goodbye from every friend, a tiny 'next time we will…' preview that makes them want to come back, "
                    "'See you next time, little sprouts!'. Calm, slower.",
@@ -290,7 +291,7 @@ def _top_up(segments: list[dict], plan: dict, cat: dict, band_id: str, lang: str
 
     def shortfall(i):
         planned = float((outl[i] if i < len(outl) else {}).get("minutes") or 1.5) * 60
-        return planned - template_seconds([segments[i]], band_id) + 9.8          # minus the fixed jingle/end card
+        return planned - template_seconds([segments[i]], band_id) + 6.9          # minus the fixed jingle/end card
 
     for _ in range(4):                                       # at most 4 extensions per episode (AI quota)
         need = .95 * target - est
@@ -386,7 +387,7 @@ def template_seconds(segs: list[dict], band_id: str) -> float:
     band's length, sung lines on the beat grid, 0.9 s segment gaps, the theme jingle and the end card.
     (episode.estimate_audio assumes the band's slower target wpm, so its preview runs ~30% long for these voices.)"""
     b = psychology.band(band_id)
-    t = 3.5 + 6.3
+    t = 3.5 + 3.4                     # end card + short opening jingle
     for i, seg in enumerate(segs):
         t += .9 if i else 0
         for sc in seg["scenes"]:
