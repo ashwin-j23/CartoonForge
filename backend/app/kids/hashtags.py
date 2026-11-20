@@ -39,15 +39,12 @@ TOPICAL = [
     (("share", "sharing"), "#SharingIsCaring"),
     (("thank you", "thankful", "grateful"), "#ThankYouSong"),
     (("brush", "teeth"), "#BrushYourTeeth"),
-    (("color", "colour"), "#LearnColors"),
-    (("count", "how many"), "#CountingSong"),
-    (("sleep", "goodnight", "bedtime"), "#BedtimeStory"),
     (("sing", "song"), "#SingAlong"),
 ]
 
 # (first month-day, last month-day, words the script must contain, hashtags)
 SEASONS = [
-    ("11-15", "12-26", ("christmas", "santa", "reindeer", "jingle"), ["#ChristmasSongsForKids", "#ChristmasForKids"]),
+    ("11-15", "12-26", ("christmas", "santa", "reindeer"), ["#ChristmasSongsForKids", "#ChristmasForKids"]),
     ("12-01", "02-28", ("snow", "winter", "snowman", "mitten"), ["#WinterSongsForKids", "#SnowmanSong"]),
     ("12-26", "01-06", ("new year", "countdown"), ["#HappyNewYearForKids"]),
     ("10-20", "11-28", ("thanksgiving", "thankful"), ["#ThanksgivingForKids"]),
@@ -70,10 +67,10 @@ def pick(category: str, script: dict | None, short: bool = False, today: date | 
     today = today or date.today()
     out: list[str] = []
     for a, b, words, tags in SEASONS:
-        if _in_window(today, a, b) and any(w in body for w in words):
+        if _in_window(today, a, b) and sum(body.count(w) for w in words) >= 2:
             out += tags
     out += CATEGORY.get(category, [])
-    out += [t for words, t in TOPICAL if any(w in body for w in words)]
+    out += [t for words, t in TOPICAL if sum(body.count(w) for w in words) >= 3]   # the topic, not a passing word
     out += GENERAL
     seen, res = set(), []
     for t in out:

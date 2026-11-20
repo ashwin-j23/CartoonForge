@@ -157,7 +157,7 @@ def update_video(video_id: str, refresh_token: str = "", title: str | None = Non
     if description is not None:
         sn["description"] = description[:4900]
     if tags is not None:
-        sn["tags"] = [t[:30] for t in tags][:15]
+        sn["tags"] = [t for t in tags if len(t) <= 40][:15]
     if privacy in ("public", "unlisted", "private"):
         st["privacyStatus"] = privacy
     r = httpx.put("https://www.googleapis.com/youtube/v3/videos", timeout=30, headers=h, params={"part": "snippet,status"},
@@ -241,7 +241,7 @@ def upload(path: Path, title: str, description: str, tags: list[str], privacy: s
               "containsSyntheticMedia": bool(synthetic), "license": "youtube", "embeddable": True}
     if publish_at and privacy == "private":
         status["publishAt"] = publish_at          # YouTube publishes it itself at that time
-    meta = {"snippet": {"title": title, "description": description[:4900], "tags": [t[:30] for t in tags][:15],
+    meta = {"snippet": {"title": title, "description": description[:4900], "tags": [t for t in tags if len(t) <= 40][:15],
                         "categoryId": str(category_id), "defaultLanguage": language, "defaultAudioLanguage": language},
             "status": status}
     parts = "snippet,status"

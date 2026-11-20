@@ -5,7 +5,7 @@ from app.kids import hashtags
 
 
 def test_season_only_when_the_episode_is_about_it():
-    xmas = {"t": "Bo bakes Christmas cookies"}
+    xmas = {"t": "Bo bakes Christmas cookies for a Christmas party"}
     assert hashtags.pick("habits", xmas, today=date(2026, 12, 1))[0] == "#ChristmasSongsForKids"
     assert "#ChristmasSongsForKids" not in hashtags.pick("habits", {"t": "sharing apples"}, today=date(2026, 12, 1))
     assert "#ChristmasSongsForKids" not in hashtags.pick("habits", xmas, today=date(2026, 7, 1))
