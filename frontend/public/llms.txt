@@ -1,0 +1,8 @@
+# CartoonForge Studio
+
+> The private control room behind the Hoppy Hop Hop kids cartoon channel on YouTube. It plans, makes, checks and publishes episodes. Everything except the sign-in page and the parents' feedback form needs the owner's password.
+
+## Public pages
+
+- [Hoppy Hop Hop on YouTube](https://www.youtube.com/channel/UCmsAeb00lgpnp-lWC7hzvPw): the channel's songs and stories for ages 3 to 5
+- [Parents' feedback form](https://cartoonforge.vercel.app/#/feedback): tell the studio what your child enjoyed

@@ -63,7 +63,7 @@ function Keys() {
       aside={<button className="btn primary" disabled={!n || !!busy} onClick={() => save(pending, 'Keys saved')}>{busy ? <Spinner /> : <Icon name="save" size={15} />}Save {n || ''} key{n === 1 ? '' : 's'}</button>}>
       {!data ? <div className="wide"><Skeleton h={36} count={5} style={{ marginBottom: 8 }} /></div> : groups.map(([title, icon, desc, keys]) => (
         <div className="key-group wide" key={title}>
-          <h4><Icon name={icon} size={15} />{title}</h4>
+          <h3 className="h4"><Icon name={icon} size={15} />{title}</h3>
           {desc && <p className="muted small">{desc}</p>}
           {keys.map((k) => {
             const info = data[k] || {}
@@ -151,7 +151,7 @@ function Deploy() {
               <ul className="checklist">
                 {list.map((c, i) => (
                   <li key={i} className={c.done ? 'done' : ''}>
-                    <span className="tick" aria-label={c.done ? 'done' : 'to do'}>{c.done && <Icon name="check" size={13} strokeWidth={2.6} />}</span>
+                    <span className="tick" role="img" aria-label={c.done ? 'done' : 'to do'}>{c.done && <Icon name="check" size={13} strokeWidth={2.6} />}</span>
                     <div><b>{c.title}</b>{c.detail && <p className="muted small">{c.detail}</p>}</div>
                   </li>
                 ))}

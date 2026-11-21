@@ -42,7 +42,13 @@ export default function Channel() {
       <PageHead title="Channel" sub="Where episodes go, and who they reach." />
 
       <section className={`card channel-card ${ch?.connected ? 'on' : ''}`}>
-        {!ov.data ? <Skeleton h={90} /> : ch?.connected ? (
+        {!ov.data ? (
+          <>
+            <div className="ch-avatar ph skel" aria-hidden="true" />
+            <div className="ch-info" aria-busy="true"><Skeleton h={22} w={96} r={999} /><Skeleton h={28} w="70%" /><Skeleton h={20} w="85%" /></div>
+            <span className="btn skel" style={{ width: 120 }} aria-hidden="true" />
+          </>
+        ) : ch?.connected ? (
           <>
             {ch.thumb ? <img src={mediaUrl(ch.thumb)} alt="" className="ch-avatar" /> : <div className="ch-avatar ph"><Icon name="tv" size={28} /></div>}
             <div className="ch-info">
@@ -96,12 +102,12 @@ export default function Channel() {
         {!s ? <Skeleton h={120} /> : (
           <>
             <div className="block">
-              <h4>Localized titles &amp; descriptions</h4>
+              <h3 className="h4">Localized titles &amp; descriptions</h3>
               <p className="muted small">Translated metadata on the same video — cheap, and helps search in other languages.</p>
               <ChipSelect options={opts} value={loc} onChange={setLoc} />
             </div>
             <div className="block">
-              <h4>Dubbed editions</h4>
+              <h3 className="h4">Dubbed editions</h3>
               <p className="muted small">A fully re-voiced copy of each episode, rendered and uploaded as its own video. Costs more voice and render time per language.</p>
               <ChipSelect options={opts} value={eds} onChange={setEds} />
             </div>

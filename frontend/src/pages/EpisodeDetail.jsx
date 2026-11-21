@@ -155,7 +155,7 @@ function MetaEditor({ ep, onSaved }) {
       </div>
       {loc.length > 0 && (
         <div className="block">
-          <h4>Localizations</h4>
+          <h3 className="h4">Localizations</h3>
           <div className="loc-list">
             {loc.map(([code, v]) => (
               <div key={code} className="loc">

@@ -101,6 +101,13 @@ export default function Episodes() {
         <Link to="/create" className="btn primary"><Icon name="plus" size={16} />New episode</Link>
       </PageHead>
 
+      {!data && (
+        <div className="eps-hero" aria-busy="true">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="eps-hero-item"><span className="eps-hero-ico skel" /><span><b>—</b><small>&nbsp;</small></span></div>
+          ))}
+        </div>
+      )}
       {data && (
         <div className="eps-hero">
           <button type="button" className="eps-hero-item st-live" onClick={() => setParam('tab', 'live')}>

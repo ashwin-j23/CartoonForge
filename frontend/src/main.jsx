@@ -3,9 +3,9 @@ import ReactDOM from 'react-dom/client'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { auth, LOGOUT_EVENT } from './api'
 import { ToastProvider } from './components/ui'
-import Layout from './components/Layout'
+const Layout = lazy(() => import('./components/Layout'))
 import Login from './pages/Login'
-import Home from './pages/Home'
+const Home = lazy(() => import('./pages/Home'))
 const Episodes = lazy(() => import('./pages/Episodes'))
 const EpisodeDetail = lazy(() => import('./pages/EpisodeDetail'))
 const Create = lazy(() => import('./pages/Create'))
@@ -18,6 +18,9 @@ const Channel = lazy(() => import('./pages/Channel'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Activity = lazy(() => import('./pages/Activity'))
 const Feedback = lazy(() => import('./pages/Feedback'))
+import '@fontsource-variable/inter/index.css'
+import '@fontsource-variable/bricolage-grotesque/index.css'
+import '@fontsource/jetbrains-mono/latin-400.css'
 import './styles.css'
 
 const THEME_KEY = 'ks_theme'
@@ -57,6 +60,7 @@ function App() {
 
   return (
     <HashRouter>
+      <Suspense fallback={null}>
       <Routes>
         <Route element={<Layout theme={theme} setTheme={setTheme} onLogout={logout} />}>
           <Route index element={<Home />} />
@@ -83,6 +87,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
+      </Suspense>
     </HashRouter>
   )
 }

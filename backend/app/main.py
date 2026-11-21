@@ -54,11 +54,10 @@ if config.CORS_ORIGINS:
 
 # Security headers on every response (HawkScan findings: CSP, anti-clickjacking, nosniff). The same set is in
 # vercel.json for the dashboard Vercel serves. Keep the two CSP strings identical.
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src"
-       " 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co https://i.ytimg.com; media-src 'self"
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob: https://*.supabase.co https://i.ytimg.com https://yt3.ggpht.com https://yt3.googleusercontent.com; media-src 'self"
        "' blob: https://*.supabase.co; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 SECURITY_HEADERS = {"Content-Security-Policy": CSP, "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff",
-                    "Referrer-Policy": "strict-origin-when-cross-origin"}
+                    "Referrer-Policy": "strict-origin-when-cross-origin", "Cross-Origin-Opener-Policy": "same-origin"}
 
 
 @app.middleware("http")

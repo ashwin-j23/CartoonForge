@@ -36,7 +36,7 @@ export default function BookSeriesCard({ series: s, setSeries }) {
         <div className="series-book">
           <div className="grow">
             <b>{b.title}</b> <span className="muted small">{(b.authors || []).join(', ')}</span>
-            <div className="series-bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            <div className="series-bar" role="progressbar" aria-label={`${b.title}: ${pct}% made into episodes`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
               <span style={{ width: `${pct}%` }} />
             </div>
             <span className="muted small">{s.next >= b.total ? 'Finished' : `Next: story ${s.next + 1} of ${b.total}`}

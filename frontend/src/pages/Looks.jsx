@@ -30,11 +30,11 @@ export default function Looks() {
       <PageHead title="Looks" sub="Art styles for the show. Same characters, same story — a different visual treatment. Pick a channel default here, or choose per episode when you create it." />
 
       <section className="look-current card">
-        {cur ? <StyleThumb style={cur} className="lg" /> : <Skeleton h={150} w={240} r={12} />}
+        {cur ? <StyleThumb style={cur} className="lg" /> : <div className="style-thumb lg skel" aria-hidden="true" />}
         <div className="grow">
           <div className="eyebrow"><Icon name="check" size={13} />Channel default</div>
           <h2>{cur?.label || current}</h2>
-          <p className="muted">{cur?.note}</p>
+          <p className="muted">{cur ? cur.note : '\u00a0'}</p>
           <div className="row wrap-row">
             {cur?.best_for && <Badge icon="smile">{cur.best_for}</Badge>}
             {cur?.stepped && <Badge tone="pink">Stop-motion · animated on twos</Badge>}
@@ -49,7 +49,7 @@ export default function Looks() {
         <span className="muted small">{list.length} look{list.length === 1 ? '' : 's'}</span>
       </div>
 
-      {loading ? <div className="grid looks"><Skeleton h={320} r={16} count={6} /></div> : !styles?.length ? (
+      {loading ? <div className="grid looks"><Skeleton h={457} r={22} count={6} /></div> : !styles?.length ? (
         <Empty icon="palette" title="No looks available">The art style catalogue couldn’t be loaded from the server.</Empty>
       ) : (
         <div className="grid looks">
@@ -57,7 +57,7 @@ export default function Looks() {
             const on = current === s.id
             return (
               <article key={s.id} className={`look-card ${on ? 'on' : ''}`}>
-                <button type="button" className="look-media" onClick={() => !s.auto && setZoom(s)} aria-label={s.auto ? undefined : `Enlarge ${s.label} sample`} disabled={s.auto}>
+                <button type="button" className="look-media" onClick={() => !s.auto && setZoom(s)} aria-label={s.auto ? `${s.label} look` : `Enlarge ${s.label} sample`} disabled={s.auto}>
                   <StyleThumb style={s} />
                   {on && <span className="look-current-tag"><Icon name="check" size={13} strokeWidth={2.6} />Current</span>}
                 </button>

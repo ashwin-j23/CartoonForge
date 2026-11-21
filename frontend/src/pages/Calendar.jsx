@@ -142,7 +142,7 @@ export default function Calendar() {
     <div className="page">
       <PageHead title="Schedule" sub="When each video goes live on YouTube. Each colour shows where a video stands." />
 
-      {loading && !data ? <Skeleton h={150} r={16} /> : (
+      {loading && !data ? <div className="skel sch-top-skel" aria-busy="true" /> : (
         <div className="sch-top">
           <div className={`sch-next ${next ? `st-${next._stage}` : ''}`}>
             <span className="sch-eyebrow"><Icon name="rocket" size={14} />Next to go live</span>

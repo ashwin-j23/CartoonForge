@@ -316,7 +316,7 @@ function CharacterDrawer({ id, onClose, onChanged, onDeleted, readOnly, fallback
           </fieldset>
 
           <div className="block">
-            <h4>Episodes</h4>
+            <h3 className="h4">Episodes</h3>
             {c.episodes_detail?.length ? (
               <ul className="mini-list">
                 {c.episodes_detail.map((e) => (

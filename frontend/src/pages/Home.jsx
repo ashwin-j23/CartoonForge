@@ -73,7 +73,7 @@ export default function Home() {
           <div className="eyebrow"><Icon name="sun" size={14} />{greeting()}</div>
           <h1>{s?.channel_name || 'Hoppy Hop Hop'} Studio</h1>
           <p className="sub">
-            {s ? <>Ages <b>{s.age_band}</b> · <b>{s.target_minutes}</b>-minute episodes · {s.autopilot ? 'Autopilot publishes episodes that clear the bar' : 'Every episode waits for your review'}</> : <Skeleton h={16} w={320} />}
+            {s ? <>Ages <b>{s.age_band}</b> · <b>{s.target_minutes}</b>-minute episodes · {s.autopilot ? 'Autopilot publishes episodes that clear the bar' : 'Every episode waits for your review'}</> : <span className="skel sub-skel" />}
           </p>
           <div className="hero-actions">
             <Link to="/create" className="btn primary lg"><Icon name="sparkles" size={18} />Create an episode</Link>
@@ -90,7 +90,11 @@ export default function Home() {
         </div>
         <div className="home-next">
           <div className="home-next-label"><Icon name="calendar" size={14} />Next publish</div>
-          {!o ? <Skeleton h={60} /> : o.next_publish ? (
+          {!o ? (
+            <div className="next-pub" aria-busy="true">
+              <Skeleton h={16} w="85%" /><Skeleton h={16} w="55%" /><Skeleton h={14} w="45%" /><Skeleton h={22} w={96} r={999} />
+            </div>
+          ) : o.next_publish ? (
             <Link to={`/episodes/${o.next_publish.id}`} className="next-pub">
               <b>{o.next_publish.title}</b>
               <span>{fmtDate(o.next_publish.publish_at)}</span>
@@ -109,7 +113,7 @@ export default function Home() {
       </section>
 
       <section className="stats">
-        {!o ? <Skeleton h={98} count={4} r={14} /> : (
+        {!o ? <Skeleton h={96} count={4} r={14} /> : (
           <>
             <Stat icon="eye" tone="amber" label="Waiting for review" value={counts.review || 0} />
             <Stat icon="film" tone="violet" label="In production" value={inProd} sub={o.worker?.busy && o.worker.current ? `${o.worker.current.stage}…` : null} />

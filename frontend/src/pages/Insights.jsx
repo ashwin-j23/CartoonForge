@@ -20,7 +20,7 @@ const fmtMean = (v) => (v == null ? '—' : v <= 1 ? `${(v * 100).toFixed(1)}%` 
 
 function Learning() {
   const { data, loading } = useApi('/optimizer', { quiet: true })
-  if (loading && !data) return <section className="card"><Skeleton h={160} /></section>
+  if (loading && !data) return <div className="skel analytics-skel" aria-busy="true" />   // same size as the card it becomes
   if (!data) return null
   const arms = Object.entries(data.arms || {})
   const segs = Object.entries(data.segments || {}).filter(([, v]) => typeof v === 'number').sort((a, b) => a[1] - b[1])
@@ -43,7 +43,7 @@ function Learning() {
               const best = rows.filter(([, o]) => o.n > 0).reduce((a, r) => (!a || (r[1].mean ?? -Infinity) > (a[1].mean ?? -Infinity) ? r : a), null)?.[0]
               return (
                 <div className="arm" key={dim}>
-                  <h4>{DIM[dim] || dim}</h4>
+                  <h3 className="h4">{DIM[dim] || dim}</h3>
                   {rows.length === 0 ? <p className="muted small">No data yet.</p> : rows.map(([opt, o]) => (
                     <div key={opt} className={`arm-row ${opt === best ? 'best' : ''}`}>
                       <span className="arm-name">{opt === best && <Icon name="star" size={12} />}{opt}</span>
@@ -57,7 +57,7 @@ function Learning() {
           </div>
           <div className="learn-two">
             <div>
-              <h4>Segments that hold attention <small className="muted">avg viewer drop per minute — lower is better</small></h4>
+              <h3 className="h4">Segments that hold attention <small className="muted">avg viewer drop per minute — lower is better</small></h3>
               {segs.length === 0 ? <p className="muted small">No segment data yet.</p> : (
                 <ol className="seg-rank">
                   {segs.map(([k, v], i) => (
@@ -72,7 +72,7 @@ function Learning() {
               )}
             </div>
             <div className="first30">
-              <h4>First 30 seconds</h4>
+              <h3 className="h4">First 30 seconds</h3>
               <div className="big-num">{data.first_30s_drop == null ? '—' : `${Number(data.first_30s_drop).toFixed(1)}%`}</div>
               <p className="muted small">of viewers leave in the first 30 s. The opening hook matters most.</p>
             </div>
@@ -92,7 +92,7 @@ function Analytics() {
   const maxViews = Math.max(1, ...cats.map((c) => c.views || 0))
   const sorted = useMemo(() => [...eps].sort((a, b) => (sort === 'recent' ? String(b.published_at).localeCompare(String(a.published_at)) : (b[sort] || 0) - (a[sort] || 0))), [eps, sort])
 
-  if (loading && !data) return <><div className="stats"><Skeleton h={98} count={3} r={14} /></div><Skeleton h={300} r={14} /></>
+  if (loading && !data) return <><div className="stats three"><Skeleton h={113} count={3} r={14} /></div><div className="skel analytics-skel" aria-busy="true" /><div className="skel cat-skel" aria-busy="true" /></>
 
   return (
     <>
@@ -141,7 +141,7 @@ function Analytics() {
                   {sorted.slice(0, 50).map((e, i) => (
                     <tr key={e.id}>
                       <td className="muted">{i + 1}</td>
-                      <td><Link to={`/episodes/${e.id}`}>{e.title}</Link> {e.url && <a href={e.url} target="_blank" rel="noreferrer" title="Open on YouTube" aria-label="Open on YouTube"><Icon name="external" size={12} /></a>}<div className="muted tiny">{e.category}</div></td>
+                      <td><Link to={`/episodes/${e.id}`}>{e.title}</Link> {e.url && <a className="tap-icon" href={e.url} target="_blank" rel="noreferrer" title="Open on YouTube" aria-label="Open on YouTube"><Icon name="external" size={12} /></a>}<div className="muted tiny">{e.category}</div></td>
                       <td className="num">{fmtNum(e.views)}</td>
                       <td className="num">{fmtNum(e.likes)}</td>
                       <td className="bar-cell"><Bar value={(e.avg_pct || 0) * k} max={100} tone="green" /><span>{pct(e.avg_pct, k)}</span></td>
@@ -183,11 +183,11 @@ function Growth() {
             {tips.length > 0 && <span className="muted small">{done} of {tips.length} done</span>}
           </div>
           {tips.length > 0 && <Progress pct={(done / tips.length) * 100} tone="green" />}
-          {loading && !data ? <Skeleton h={44} count={5} style={{ marginTop: 10 }} /> : tips.length === 0 ? <p className="muted">No tips right now.</p> : (
+          {loading && !data ? <div className="skel checklist-skel" aria-busy="true" /> : tips.length === 0 ? <p className="muted">No tips right now.</p> : (
             <ul className="checklist">
               {tips.map((t, i) => (
                 <li key={i} className={t.done ? 'done' : ''}>
-                  <span className="tick" aria-label={t.done ? 'done' : 'to do'}>{t.done && <Icon name="check" size={13} strokeWidth={2.6} />}</span>
+                  <span className="tick" role="img" aria-label={t.done ? 'done' : 'to do'}>{t.done && <Icon name="check" size={13} strokeWidth={2.6} />}</span>
                   <div><b>{t.title}</b>{t.detail && <p className="muted small">{t.detail}</p>}</div>
                 </li>
               ))}
@@ -198,13 +198,13 @@ function Growth() {
         <aside className="stack">
           <div className="card">
             <h3><Icon name="layers" size={16} />Next compilation</h3>
-            {!data ? <Skeleton h={24} /> : data.next_compilation
+            {!data ? <Skeleton h={42} /> : data.next_compilation
               ? <p><b>{fmtDate(data.next_compilation, { weekday: 'long', month: 'short', day: 'numeric' })}</b><br /><span className="muted small">in {until(data.next_compilation)}</span></p>
               : <p className="muted small">Weekly compilations are off. Turn them on in <Link to="/settings#growth">Settings → Growth</Link>.</p>}
           </div>
           <div className="card">
             <h3><Icon name="search" size={16} />SEO keywords</h3>
-            {data?.seo_keywords?.length
+            {!data ? <Skeleton h={64} /> : data?.seo_keywords?.length
               ? <div className="chips">{data.seo_keywords.map((k) => <Badge key={k} tone="blue" size="sm">{k}</Badge>)}</div>
               : <p className="muted small">Keywords appear once a few episodes have metadata.</p>}
           </div>

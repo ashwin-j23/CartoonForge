@@ -21,7 +21,7 @@ function Stepper({ step, setStep, maxSeen }) {
         const state = i === step ? 'current' : i < step ? 'done' : ''
         return (
           <li key={id} className={state}>
-            <button type="button" disabled={i > maxSeen} onClick={() => setStep(i)} aria-current={i === step ? 'step' : undefined}>
+            <button type="button" disabled={i > maxSeen} onClick={() => setStep(i)} aria-current={i === step ? 'step' : undefined} aria-label={`Step ${i + 1}: ${label}`}>
               <span className="step-n">{i < step ? <Icon name="check" size={14} strokeWidth={2.6} /> : <Icon name={icon} size={14} />}</span>
               <span className="step-label">{label}</span>
             </button>

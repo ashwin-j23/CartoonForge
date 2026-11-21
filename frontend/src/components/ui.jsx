@@ -410,7 +410,7 @@ export function Empty({ icon = 'sparkles', emoji, title, children, action, compa
   return (
     <div className={`empty ${compact ? 'compact' : ''}`}>
       <div className="empty-art" aria-hidden="true">{emoji ? <span className="empty-emoji">{emoji}</span> : <Icon name={icon} size={26} />}</div>
-      {title && <h4>{title}</h4>}
+      {title && <p className="empty-title">{title}</p>}
       {children && <p>{children}</p>}
       {action && <div className="empty-action">{action}</div>}
     </div>

@@ -57,7 +57,7 @@ export default function Scorecard({ critic, bar, band }) {
 
       {rubric.length > 0 && (
         <div className="block">
-          <h4>Rubric</h4>
+          <h3 className="h4">Rubric</h3>
           <div className="rubric">
             {rubric.map(([k, v]) => (
               <div className="rubric-row" key={k}>
@@ -71,7 +71,7 @@ export default function Scorecard({ critic, bar, band }) {
       )}
 
       <div className="block">
-        <h4>Script metrics {band?.label ? <small className="muted">vs. {band.label} targets</small> : null}</h4>
+        <h3 className="h4">Script metrics {band?.label ? <small className="muted">vs. {band.label} targets</small> : null}</h3>
         <div className="metrics">
           {METRICS.filter(([k]) => m[k] != null).map(([k, emoji, label, fmt, tk, okFn]) => {
             const target = tk && band ? band[tk] : null
@@ -90,7 +90,7 @@ export default function Scorecard({ critic, bar, band }) {
 
       {kw.length > 0 && (
         <div className="block">
-          <h4>Key-word repetition {band?.repeat_key ? <small className="muted">(aim for ≥ {band.repeat_key} each)</small> : null}</h4>
+          <h3 className="h4">Key-word repetition {band?.repeat_key ? <small className="muted">(aim for ≥ {band.repeat_key} each)</small> : null}</h3>
           <div className="chips">
             {kw.map(([w, n]) => (
               <span key={w} className={`badge sm ${band?.repeat_key && n < band.repeat_key ? 't-red' : 't-green'}`}>🔑 {w} × {n}</span>
@@ -100,7 +100,7 @@ export default function Scorecard({ critic, bar, band }) {
       )}
 
       <div className="block">
-        <h4>Notes from the critic</h4>
+        <h3 className="h4">Notes from the critic</h3>
         {issues.length === 0 ? <div className="banner ok"><span className="banner-ico">🌈</span>No issues flagged — lovely work.</div> : (
           <ul className="issues">
             {issues.map((s, i) => <li key={i}><span aria-hidden="true">{/too|long|fast|hard|complex|grade/i.test(s) ? '🐢' : /question|interact|engage/i.test(s) ? '🙋' : /repeat|key/i.test(s) ? '🔁' : '💭'}</span>{s}</li>)}

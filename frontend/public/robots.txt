@@ -1,0 +1,4 @@
+# CartoonForge Studio is a private control room; the public pages are the sign-in and the parents' feedback form.
+User-agent: *
+Allow: /
+Disallow: /api/
