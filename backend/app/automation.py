@@ -214,9 +214,16 @@ def checklist() -> list[dict]:
 
 def status() -> dict:
     from .pipeline import free_slots
+    from concurrent.futures import ThreadPoolExecutor
     s = app_settings()
     db = get_db()
-    rows = db.query("episodes", limit=300)
+    with ThreadPoolExecutor(5) as ex:                     # independent reads at once
+        f_rows = ex.submit(db.query, "episodes", limit=300, light=True)
+        f_ev = ex.submit(db.query, "events", limit=200)
+        f_slots = ex.submit(free_slots, 4)
+        f_last = ex.submit(db.get_setting, "automation_last")
+        f_cl = ex.submit(checklist)
+        rows, events, slots, last, cl = f_rows.result(), f_ev.result(), f_slots.result(), f_last.result(), f_cl.result()
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
@@ -224,12 +231,11 @@ def status() -> dict:
     published_today = sum(1 for r in rows if r["status"] == "published" and (r.get("published_at") or "").startswith(today))
     held = [{"id": r["id"], "title": (r.get("meta") or {}).get("title") or r.get("topic"), "why": r.get("auto_hold") or gates(r, s)}
             for r in rows if r["status"] == "review"][:10]
-    actions = [e for e in db.query("events", limit=200) if str(e.get("msg", "")).startswith(("Auto:", "Autopilot", "Planned:"))][:12]
-    cl = checklist()
+    actions = [e for e in events if str(e.get("msg", "")).startswith(("Auto:", "Autopilot", "Planned:"))][:12]
     return {"enabled": bool(s.get("full_auto")), "ready": all(c["ok"] for c in cl if c["need"]),
             "checklist": cl, "counts": counts, "published_today": published_today,
             "max_per_day": int(s.get("max_posts_per_day", 3)), "episodes_per_day": int(s.get("episodes_per_day", 3)),
-            "next_slots": free_slots(4), "held": held, "last_tick": db.get_setting("automation_last"),
+            "next_slots": slots, "held": held, "last_tick": last,
             "actions": [{"at": a["created_at"], "msg": a["msg"][:200], "episode_id": a.get("episode_id"),
                          "level": a.get("level")} for a in actions],
             "heartbeat_minutes": 5}

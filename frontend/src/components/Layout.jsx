@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { post } from '../api'
 import Icon from './icons'
@@ -118,7 +118,7 @@ export default function Layout({ theme, setTheme, onLogout }) {
 
       <main className="main" id="main" tabIndex={-1}>
         <ErrorBoundary resetKey={loc.pathname}>
-          <Outlet />
+          <Suspense fallback={<div className="page-loading" aria-busy="true" />}><Outlet /></Suspense>
         </ErrorBoundary>
       </main>
     </div>

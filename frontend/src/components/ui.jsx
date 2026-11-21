@@ -1,5 +1,5 @@
 import { Component, createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
-import { api } from '../api'
+import { api, get } from '../api'
 import Icon from './icons'
 
 export { Icon }
@@ -51,7 +51,7 @@ export function useApi(path, { ms = 0, quiet = false } = {}) {
   const load = useCallback(async (silent) => {
     if (!path) { setLoading(false); return null }
     try {
-      const d = await api(path)
+      const d = await get(path)
       if (alive.current) { setData(d); setError(null) }
       return d
     } catch (e) {

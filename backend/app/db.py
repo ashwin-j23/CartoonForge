@@ -39,7 +39,9 @@ class BaseDB:
     def delete(self, table: str, id: str) -> None: ...
     def query(self, table: str, eq: dict | None = None, in_: dict | None = None,
               lte: dict | None = None, gte: dict | None = None,
-              order: str = "created_at", desc: bool = True, limit: int = 200) -> list[dict]: ...
+              order: str = "created_at", desc: bool = True, limit: int = 200, light: bool = False) -> list[dict]: ...
+    # light=True (episodes, read-only lists): skip the big JSON columns (script, meta, critic, timeline, ...);
+    # meta keeps only its title, critic its score, script its writer. Never write a light row back.
 
     def claim(self, table: str, id: str, from_status: list[str], patch: dict) -> dict | None:
         """Atomically move a row out of one of `from_status`. None if someone else got it."""
@@ -137,7 +139,7 @@ class LocalDB(BaseDB):
             return row
 
     def query(self, table, eq=None, in_=None, lte=None, gte=None,
-              order="created_at", desc=True, limit=200):
+              order="created_at", desc=True, limit=200, light=False):
         with self._lock:
             rows = [self._row(r[0]) for r in self.conn.execute(f"SELECT doc FROM {table}")]
         def ok(r):
@@ -171,6 +173,11 @@ COLUMNS: dict[str, frozenset[str]] = {
     "characters": frozenset(('id', 'created_at', 'updated_at', 'tier', 'name', 'kind', 'species', 'gender', 'age', 'colors', 'outfit', 'skin', 'hair', 'hair_color', 'personality', 'look', 'catchphrase', 'voice', 'pitch', 'origin', 'episodes')),
     "feedback": frozenset(('id', 'created_at', 'updated_at', 'episode_id', 'enjoyed', 'style', 'animation', 'voices', 'learning', 'change', 'request', 'age_band', 'role')),
 }
+
+
+HEAVY = frozenset(("script", "meta", "critic", "timeline", "source", "song_regions"))
+LIGHT_SELECT = ",".join(sorted(COLUMNS["episodes"] - HEAVY) + [
+    "extra", "_title:meta->>title", "_score:critic->score", "_writer:script->>writer"])
 
 
 def _split(table: str, row: dict) -> tuple[dict, dict]:
@@ -256,8 +263,11 @@ class SupabaseDB(BaseDB):
         return out[0] if out else None
 
     def query(self, table, eq=None, in_=None, lte=None, gte=None,
-              order="created_at", desc=True, limit=200):
+              order="created_at", desc=True, limit=200, light=False):
         params: list[tuple[str, str]] = []
+        light = light and table == "episodes"
+        if light:
+            params.append(("select", LIGHT_SELECT))
         for k, v in (eq or {}).items():
             params.append((k, f"eq.{str(v).lower() if isinstance(v, bool) else v}"))
         for k, vs in (in_ or {}).items():
@@ -268,7 +278,13 @@ class SupabaseDB(BaseDB):
             params.append((k, f"gte.{v}"))
         params.append(("order", f"{order}.{'desc' if desc else 'asc'}.nullslast"))
         params.append(("limit", str(limit)))
-        return self._rows(self.client.get(f"{self.base}/{table}", params=params))
+        rows = self._rows(self.client.get(f"{self.base}/{table}", params=params))
+        if light:
+            for r in rows:
+                r["meta"] = {"title": r.pop("_title", None)}
+                r["critic"] = {"score": r.pop("_score", None)}
+                r["script"] = {"writer": r.pop("_writer", None)}
+        return rows
 
 
 _db: BaseDB | None = None

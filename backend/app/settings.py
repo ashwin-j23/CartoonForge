@@ -119,7 +119,8 @@ def _encode_secrets(values: dict) -> dict:
 def _load(force: bool = False):
     if force or time.time() - _cache["t"] > 15 or _cache["app"] is None:
         db = get_db()
-        stored = db.get_setting("app", {}) or {}
+        got = {r["id"]: r.get("value") for r in db.query("settings", in_={"id": ["app", "secrets"]}, limit=2)}
+        stored = got.get("app") or {}
         merged = copy.deepcopy(DEFAULTS)
         for k, v in stored.items():
             if isinstance(v, dict) and isinstance(merged.get(k), dict):
@@ -127,7 +128,7 @@ def _load(force: bool = False):
             else:
                 merged[k] = v
         _cache["app"] = merged
-        _cache["secrets"] = _decode_secrets(db.get_setting("secrets", {}))
+        _cache["secrets"] = _decode_secrets(got.get("secrets") or {})
         _cache["t"] = time.time()
 
 

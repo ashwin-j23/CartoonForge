@@ -233,7 +233,7 @@ def _full(e: dict) -> dict:
 
 @app.get("/api/episodes", dependencies=[Depends(auth)])
 def list_episodes(status: str | None = None, kind: str | None = None):
-    rows = get_db().query("episodes", eq={"status": status} if status else None, limit=300)
+    rows = get_db().query("episodes", eq={"status": status} if status else None, limit=300, light=True)
     if kind:
         rows = [r for r in rows if r.get("kind", "episode") == kind]
     return [_summary(r) for r in rows]
@@ -845,15 +845,19 @@ def deploy_info():
 @app.get("/api/overview", dependencies=[Depends(auth)])
 def overview():
     from .settings import secret
+    from concurrent.futures import ThreadPoolExecutor
     db = get_db()
-    rows = db.query("episodes", limit=500)
+    with ThreadPoolExecutor(3) as ex:                     # independent reads at once: one round trip, not three
+        f_rows = ex.submit(db.query, "episodes", limit=500, light=True)
+        f_ch = ex.submit(db.get_setting, "channel_cache")
+        f_s = ex.submit(app_settings)
+        rows, ch, s = f_rows.result(), f_ch.result(), f_s.result()
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
     nxt = sorted([r for r in rows if r["status"] == "approved" and r.get("publish_at")], key=lambda r: r["publish_at"])
     channel = None
     if secret("YT_REFRESH_TOKEN"):
-        ch = db.get_setting("channel_cache")
         if not ch or time.time() - ch.get("t", 0) > 3600:
             try:
                 from .publish import youtube
@@ -862,7 +866,6 @@ def overview():
             except Exception as e:  # noqa: BLE001
                 ch = {"error": str(e)[:200]}
         channel = {"connected": "id" in ch, **{k: v for k, v in ch.items() if k != "t"}}
-    s = app_settings()
     cur = pipeline.current()
     return {"counts": counts,
             "next_publish": {"id": nxt[0]["id"], "title": (nxt[0].get("meta") or {}).get("title", nxt[0]["topic"]),
@@ -902,7 +905,7 @@ def storage_cleanup():
 @app.get("/api/calendar", dependencies=[Depends(auth)])
 def calendar():
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    rows = get_db().query("episodes", in_={"status": ["approved", "publishing", "published"]}, limit=300)
+    rows = get_db().query("episodes", in_={"status": ["approved", "publishing", "published"]}, limit=300, light=True)
     sched = []
     for r in rows:
         state, at = _sched_state(r, now)
@@ -923,7 +926,7 @@ def calendar():
 
 @app.get("/api/analytics", dependencies=[Depends(auth)])
 def analytics():
-    rows = [r for r in get_db().query("episodes", eq={"status": "published"}, limit=500)]
+    rows = get_db().query("episodes", eq={"status": "published"}, limit=500, light=True)
     eps, per = [], {}
     tv = tl = 0
     for r in rows:

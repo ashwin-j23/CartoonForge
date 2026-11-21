@@ -45,7 +45,12 @@ export async function api(path, { method = 'GET', body } = {}) {
   try { return JSON.parse(text) } catch { return text }
 }
 
-export const get = (p) => api(p)
+const inflight = new Map()
+/** GETs of the same path that overlap share one request (the sidebar and the page both ask for /overview). */
+export const get = (p) => {
+  if (!inflight.has(p)) inflight.set(p, api(p).finally(() => inflight.delete(p)))
+  return inflight.get(p)
+}
 export const post = (p, body = {}) => api(p, { method: 'POST', body })
 export const put = (p, body) => api(p, { method: 'PUT', body })
 export const patch = (p, body) => api(p, { method: 'PATCH', body })

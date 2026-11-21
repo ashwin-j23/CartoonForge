@@ -322,9 +322,9 @@ def free_slots(n: int = 6) -> list[str]:
     times = s.get("post_times") or [s.get("post_time") or "07:30"]
     times = sorted(times)[: max(1, int(s.get("episodes_per_day", len(times))))]
     db = get_db()
-    taken = {(e.get("publish_at") or "")[:16] for e in db.query("episodes", in_={"status": ["approved", "publishing"]})}
+    taken = {(e.get("publish_at") or "")[:16] for e in db.query("episodes", in_={"status": ["approved", "publishing"]}, light=True)}
     soon = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    taken |= {(e.get("published_at") or "")[:16] for e in db.query("episodes", eq={"status": "published"}, limit=200)
+    taken |= {(e.get("published_at") or "")[:16] for e in db.query("episodes", eq={"status": "published"}, limit=200, light=True)
               if e.get("kind", "episode") == "episode" and (e.get("published_at") or "") > soon}   # uploaded, goes live later
     out, now = [], datetime.now(tz)
     for i in range(0, 120):

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { lazy, Suspense, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { auth, LOGOUT_EVENT } from './api'
@@ -6,18 +6,18 @@ import { ToastProvider } from './components/ui'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Home from './pages/Home'
-import Episodes from './pages/Episodes'
-import EpisodeDetail from './pages/EpisodeDetail'
-import Create from './pages/Create'
-import Characters from './pages/Characters'
-import Looks from './pages/Looks'
-import Library from './pages/Library'
-import Insights from './pages/Insights'
-import Calendar from './pages/Calendar'
-import Channel from './pages/Channel'
-import Settings from './pages/Settings'
-import Activity from './pages/Activity'
-import Feedback from './pages/Feedback'
+const Episodes = lazy(() => import('./pages/Episodes'))
+const EpisodeDetail = lazy(() => import('./pages/EpisodeDetail'))
+const Create = lazy(() => import('./pages/Create'))
+const Characters = lazy(() => import('./pages/Characters'))
+const Looks = lazy(() => import('./pages/Looks'))
+const Library = lazy(() => import('./pages/Library'))
+const Insights = lazy(() => import('./pages/Insights'))
+const Calendar = lazy(() => import('./pages/Calendar'))
+const Channel = lazy(() => import('./pages/Channel'))
+const Settings = lazy(() => import('./pages/Settings'))
+const Activity = lazy(() => import('./pages/Activity'))
+const Feedback = lazy(() => import('./pages/Feedback'))
 import './styles.css'
 
 const THEME_KEY = 'ks_theme'
@@ -49,7 +49,7 @@ function App() {
     window.addEventListener('hashchange', h)
     return () => window.removeEventListener('hashchange', h)
   }, [])
-  if (hash.startsWith('#/feedback')) return <Feedback />          // public page for parents: no sign-in
+  if (hash.startsWith('#/feedback')) return <Suspense fallback={null}><Feedback /></Suspense>          // public page for parents: no sign-in
 
   if (!token) return <Login onLogin={(t) => { auth.set(t); setToken(t) }} />
 
