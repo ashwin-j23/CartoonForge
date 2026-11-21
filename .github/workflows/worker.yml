@@ -39,24 +39,44 @@ jobs:
           cache-dependency-path: backend/requirements-render.txt
       - name: Install ffmpeg + fonts
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core > /dev/null
-      - name: Cache Blender (3D cartoon look)
-        uses: actions/cache@v4
+      - name: Restore Blender (3D cartoon look)
+        id: blender-cache
+        uses: actions/cache/restore@v4
         with:
           path: backend/tools
           key: blender-4.5.16-linux-x64
+      # Never blocks the worker: if Blender can't be fetched, this run renders the classic 2D look.
       - name: Install Blender 4.5.16 LTS (checksum-verified)
+        id: blender
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
         working-directory: backend
         run: |
-          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libgl1 libegl1 > /dev/null
-          if [ ! -x tools/blender/blender ]; then
-            mkdir -p tools && cd tools
-            curl -fsSL -o blender.tar.xz https://download.blender.org/release/Blender4.5/blender-4.5.16-linux-x64.tar.xz
-            echo "23432b064977908beb1ab4b7f32f024e7331105c875c187dce002aff84b10c11  blender.tar.xz" | sha256sum -c -
-            tar -xJf blender.tar.xz && rm blender.tar.xz
-            ln -sfn blender-4.5.16-linux-x64 blender
-            cd ..
-          fi
-          tools/blender/blender --version | head -1
+          mkdir -p tools && cd tools
+          F=blender-4.5.16-linux-x64.tar.xz
+          SUM=23432b064977908beb1ab4b7f32f024e7331105c875c187dce002aff84b10c11
+          ok=""
+          for base in https://download.blender.org/release/Blender4.5 \
+                      https://mirrors.ocf.berkeley.edu/blender/release/Blender4.5 \
+                      https://mirror.clarkson.edu/blender/release/Blender4.5 \
+                      https://ftp.halifax.rwth-aachen.de/blender/release/Blender4.5; do
+            if curl -fsSL --retry 3 --retry-delay 5 -A "Mozilla/5.0 (X11; Linux x86_64)" -o "$F" "$base/$F" \
+               && echo "$SUM  $F" | sha256sum -c -; then ok=1; echo "downloaded from $base"; break; fi
+            echo "::warning::Blender download failed from $base"; rm -f "$F"
+          done
+          [ -n "$ok" ] || { echo "::warning::Blender unavailable this run - rendering 2D"; exit 1; }
+          tar -xJf "$F" && rm "$F" && ln -sfn blender-4.5.16-linux-x64 blender
+      - name: Save Blender cache
+        if: steps.blender-cache.outputs.cache-hit != 'true' && steps.blender.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: backend/tools
+          key: blender-4.5.16-linux-x64
+      - name: Blender check
+        working-directory: backend
+        run: |
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libgl1 libegl1 > /dev/null || true
+          if [ -x tools/blender/blender ]; then tools/blender/blender --version | head -1; else echo "no Blender: 2D look"; fi
       - name: Install deps
         run: pip install -r backend/requirements-render.txt
       - name: Cache voice model (Kokoro ~350 MB)
