@@ -59,3 +59,34 @@ def test_about_a_short_a_day_never_a_repeat_clip():
                                                                      {"kind": "game", "start": 110, "end": 150}]}
     cuts = pipeline._short_cuts(p)
     assert cuts[0] == (100, 158, True) and cuts[1] == (20, 60, False) and len(cuts) == 2   # starts on the beat
+
+
+def test_hook_is_four_lines_with_no_roll_call():
+    from app.kids import writer
+    cat = {"lead": "hoppy"}
+    raw = [{"speaker": "hoppy", "text": "Look, a dinosaur bone! Can you find it?"},
+           {"speaker": "sunny", "text": "Hello, little sprouts!"},
+           {"speaker": "pip", "text": "Hi! I'm Pip!"},
+           {"speaker": "mimi", "text": "And I'm Mimi!"},
+           {"speaker": "sunny", "text": "Let's dig it up together!"},
+           {"speaker": "bo", "text": "Dig, dig, dig!"},
+           {"speaker": "hoppy", "text": "What will we find?"}]
+    out = [sc["text"] for sc in writer.clean_scenes(raw, {"kind": "hello"}, cat)]
+    assert out == ["Look, a dinosaur bone! Can you find it?", "Let's dig it up together!", "Dig, dig, dig!",
+                   "What will we find?"]
+
+
+def test_long_opening_is_cut_before_upload(tmp_path):
+    import subprocess
+    from app import pipeline
+    src = tmp_path / "ep.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=blue:s=160x90:d=40", "-f", "lavfi",
+                    "-i", "anullsrc=r=22050", "-shortest", "-c:v", "libx264", "-c:a", "aac", str(src)], check=True)
+    tl = [{"kind": "hello", "title": "Hello!", "start": 0, "end": 30}, {"kind": "story", "title": "Into the Woods", "start": 30, "end": 45},
+          {"kind": "song", "title": "Song", "start": 45, "end": 60}, {"kind": "goodbye", "title": "Bye", "start": 60, "end": 75}]
+    desc = "Hook.\n\n0:00 Hello!\n0:30 Into the Woods\n0:45 Song\n\nMore."
+    out, new, cut = pipeline.trim_opening(src, tl, desc)
+    assert cut == 30 and out != src and out.exists()
+    assert "Hello!" not in new and "0:00 Into the Woods\n0:15 Song\n0:30 Bye" in new
+    short_tl = [{**tl[0], "end": 12}, {**tl[1], "start": 12}]
+    assert pipeline.trim_opening(src, short_tl, desc) == (src, desc, 0.0)       # a real hook stays

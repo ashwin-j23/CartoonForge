@@ -377,6 +377,30 @@ BINGE = {   # every video also lands in one of these, so a child who finishes on
 }
 
 
+OPENING_MAX = 20.0     # seconds of greeting before the story; longer openings lost 4 in 5 viewers
+
+
+def trim_opening(local: Path, timeline: list[dict], desc: str) -> tuple[Path, str, float]:
+    """Safety net for the hook: if the first segment is a greeting longer than OPENING_MAX, start the video on the
+    next segment (re-encoded so it begins on a clean frame) and move the description's chapters to match."""
+    import re
+    import subprocess
+    from .kids import meta as kmeta
+    if len(timeline) < 2 or timeline[0].get("kind") != "hello":
+        return local, desc, 0.0
+    cut = float(timeline[1]["start"])
+    if cut <= OPENING_MAX:
+        return local, desc, 0.0
+    out = local.with_name(local.stem + "_hook.mp4")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{cut:.2f}", "-i", str(local), "-c:v", "libx264",
+                    "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
+                    "-movflags", "+faststart", str(out)], check=True)
+    ch = kmeta.chapters([{**g, "start": g["start"] - cut, "end": g["end"] - cut} for g in timeline[1:]])
+    paras = [p for p in desc.split("\n\n")]
+    paras = [ch if re.match(r"^0:00 ", p) else p for p in paras] if ch else [p for p in paras if not re.match(r"^0:00 ", p)]
+    return out, "\n\n".join(paras), cut
+
+
 def publish(eid: str, force: bool = False) -> dict:
     db = get_db()
     s = app_settings()
@@ -402,6 +426,13 @@ def publish(eid: str, force: bool = False) -> dict:
             # uploaded early as a scheduled video: YouTube itself makes it public exactly at the slot
             privacy, when = "private", slot.isoformat(timespec="seconds").replace("+00:00", "Z")
         desc = meta.get("description", "") if ep.get("kind") == "short" else feedback.with_link(meta.get("description", ""), ep["id"])
+        if ep.get("kind") in (None, "episode"):
+            fetched = local
+            local, desc, cut = trim_opening(local, ep.get("timeline") or [], desc)
+            if cut:
+                if str(fetched).startswith(str(config.WORK_DIR)):
+                    Path(fetched).unlink(missing_ok=True)
+                log(f"Opening was {cut:.0f}s: the video now starts on the story (viewers leave long greetings)", ep=eid)
         res = youtube.upload(local, meta.get("title", ep["topic"]), desc, meta.get("tags", []),
                              privacy, thumb, lang.split("-")[0], meta.get("localizations"),
                              rt, meta.get("category_id", "27"), made_for_kids=True,

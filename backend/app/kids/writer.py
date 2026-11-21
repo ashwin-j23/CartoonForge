@@ -183,7 +183,15 @@ def clean_scenes(scenes: list, seg: dict, category: dict, guests: set | None = N
         out.append({"speaker": spk, "text": text[:400], "kind": kind,
                     "emotion": sc.get("emotion") or "happy", "action": sc.get("action") or "idle",
                     "cast": on or [category["lead"]], "card": _card(sc.get("card")), **({"roles": roles} if roles else {})})
+    if seg["kind"] == "hello":            # the hook: 4 in 5 viewers left during long greetings, so it is enforced here
+        out = [sc for sc in out if not ROLL_CALL.search(sc["text"])][:HOOK_LINES]
     return out
+
+
+HOOK_LINES = 4
+_NAMES = "|".join(c["name"].split()[0].lower() for c in cast.CAST.values())
+ROLL_CALL = re.compile(rf"\b(i'?m|i am|it'?s me,?)\s+({_NAMES})\b|^(hi|hello)[ ,!]+(friends?|everyone|little sprouts)\b"
+                       r"|\bhow are you\b", re.I)
 
 
 def clean_characters(chars) -> list[dict]:
