@@ -229,6 +229,35 @@ def run_blender(job: dict, workdir: Path, log=print, progress=None, total=None) 
         raise RuntimeError("Blender failed:\n" + "".join(tail[-15:]))
 
 
+class TooSlow(RuntimeError):
+    """This machine would take longer than the 3D budget (settings render_3d_max_minutes): render 2D instead."""
+
+
+def seconds_per_frame(job: dict, workdir: Path, n: int = 4) -> float:
+    """Render n sample frames spread over the episode and time the gap between them (Blender's start-up and scene
+    build are left out). CPU-only machines are ~50x slower than a GPU, so this decides whether 3D is possible here."""
+    frames = job["frames"]
+    pick = [frames[round(i * (len(frames) - 1) / (n - 1))] for i in range(n)] if len(frames) >= n else frames
+    calib = workdir / "calib3d"
+    calib.mkdir(parents=True, exist_ok=True)
+    jp = workdir / "calib3d.json"
+    jp.write_text(json.dumps({**job, "out_dir": str(calib), "first": 0, "last": len(pick) - 1, "frames": pick},
+                             separators=(",", ":")))
+    p = subprocess.Popen([str(BLENDER), "-b", "--factory-startup", "-noaudio", "--python", str(SCENE), "--", str(jp)],
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    t0, saved = time.time(), []
+    for line in p.stdout:
+        if "Saved:" in line:
+            saved.append(time.time())
+    p.wait()
+    shutil.rmtree(calib, ignore_errors=True)
+    if p.returncode != 0 or not saved:
+        raise RuntimeError("Blender could not render the sample frames")
+    if len(saved) >= 2:
+        return (saved[-1] - saved[0]) / (len(saved) - 1)
+    return saved[0] - t0
+
+
 # ---------------------------------------------------------------- HUD over the 3D picture
 def hud(tl: fr.Timeline, t: float, base: Image.Image, st: dict) -> Image.Image:
     W, H = tl.W, tl.H
@@ -331,13 +360,33 @@ def _hud_worker(args):
     return out, lum
 
 
+def check_speed(script: dict, settings: dict, workdir: Path, log=print) -> None:
+    """Raise TooSlow when this machine can't render the episode in 3D within render_3d_max_minutes."""
+    from ..episode import estimate_audio
+    rw, rh, fps3d, samples = QUALITY.get(settings.get("render_3d_quality") or "standard", QUALITY["standard"])
+    snd = estimate_audio(script, 24)
+    tl = fr.Timeline(script, snd, 1280, 720, 24, settings)
+    tl._3d_sets = tuple(set_specs(script))
+    n3 = int(snd["duration"] * fps3d) + 1
+    sample = [frame_state(tl, snd["duration"] * (i + .5) / 4) for i in range(4)]
+    job = {"W": rw, "H": rh, "fps": fps3d, "samples": samples, "engine": settings.get("render_3d_engine", "auto"),
+           "outline": True, "cast": cast_specs(script), "sets": set_specs(script),
+           "frames": [{k: v for k, v in st.items() if not k.startswith("_")} for st in sample]}
+    workdir.mkdir(parents=True, exist_ok=True)
+    per = seconds_per_frame(job, workdir)
+    est, budget = per * n3 / 60, float(settings.get("render_3d_max_minutes", 120))
+    log(f"3D speed here: {per:.1f} s a frame, about {est:.0f} min for {n3} frames (budget {budget:.0f} min)")
+    if est > budget:
+        raise TooSlow(f"3D would take about {est:.0f} min on this machine ({per:.1f} s a frame, budget {budget:.0f} min)")
+
+
 def render_video(script: dict, settings: dict, workdir: Path, log=print, progress=None) -> dict:
     """Same contract as render/episode.py render(), but the picture is 3D."""
     from .. import audio as audiomod
     from ..episode import _size, flash_check, thumbnail
     if not available():
         raise RuntimeError(f"Blender not found at {BLENDER} (download it to backend/tools/blender or set BLENDER_BIN)")
-    workdir.mkdir(parents=True, exist_ok=True)
+    check_speed(script, settings, workdir, log)          # first: a 2D fallback mustn't record the voices twice
     W, H = _size(settings)
     fps = config.RENDER_FPS
     q = QUALITY.get(settings.get("render_3d_quality") or "standard", QUALITY["standard"])

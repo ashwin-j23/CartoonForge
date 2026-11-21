@@ -61,6 +61,7 @@ DEFAULTS: dict = {
     "art_style": "auto",                  # auto (learn which look holds kids, per age band) | classic | paper | comic |
                                           # pixel | anime | ps2 | risograph
     "render_3d_quality": "standard",       # 3D cartoon look: draft (540p) | standard (720p) | high (1080p, 24 fps)
+    "render_3d_max_minutes": 120,          # 3D only when this machine can render the episode in time (else 2D)
     "render_3d_engine": "auto",            # auto (GPU if Blender sees one, else CPU) | cycles | eevee
     "palette": "auto",                    # auto (by category + age, render/palette.py) or a palette id
     # ---- AI animation (render/aivideo.py): code | hero (AI hero shots) | full (every shot AI-animated)

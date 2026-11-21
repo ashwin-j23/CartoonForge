@@ -201,7 +201,9 @@ def checklist() -> list[dict]:
         {"id": "heartbeat", "title": "Heartbeat running", "ok": sched, "need": True,
          "detail": "This server ticks every 5 minutes (INTERNAL_SCHEDULER=1), or the GitHub render farm / a cron calls /api/cron/tick."},
         {"id": "renderer", "title": "Renderer ready", "ok": style != "toy3d" or blender, "need": True,
-         "detail": ("Blender ready for the 3D cartoon look." if blender else
+         "detail": ("Blender ready. Each episode first times a few 3D frames: if the machine can't finish within "
+                    "render_3d_max_minutes (GitHub's free CPU runners take ~10+ hours an episode), it renders the "
+                    "classic 2D look instead. A machine with a GPU renders real 3D." if blender else
                     "The 3D cartoon look needs Blender: the GitHub worker installs it on its next run "
                     "(locally: backend/tools/blender). Other looks need nothing.")},
         {"id": "disk", "title": "Disk space", "ok": free_gb > 5, "need": False, "detail": f"{free_gb:.0f} GB free (each episode ~0.2-0.5 GB while rendering)."},

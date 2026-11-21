@@ -57,8 +57,12 @@ def render(script: dict, settings: dict, workdir: Path, log=print, progress=None
     if settings.get("_style") == "toy3d":                 # real 3D picture (Blender), same soundtrack + plan
         from . import three_d
         if three_d.available():
-            return three_d.render_video(script, settings, workdir, log, progress)
-        log("3D cartoon look needs Blender (backend/tools/blender) — rendering in the classic 2D look instead")
+            try:
+                return three_d.render_video(script, settings, workdir, log, progress)
+            except three_d.TooSlow as e:      # a CPU-only runner: hours per episode, so keep the 2D look here
+                log(f"{e} — rendering in the classic 2D look instead (a machine with a GPU renders 3D)")
+        else:
+            log("3D cartoon look needs Blender (backend/tools/blender) — rendering in the classic 2D look instead")
         settings = {**settings, "_style": "classic"}
     workdir.mkdir(parents=True, exist_ok=True)
     W, H = _size(settings)

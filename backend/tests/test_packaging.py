@@ -90,3 +90,22 @@ def test_long_opening_is_cut_before_upload(tmp_path):
     assert "Hello!" not in new and "0:00 Into the Woods\n0:15 Song\n0:30 Bye" in new
     short_tl = [{**tl[0], "end": 12}, {**tl[1], "start": 12}]
     assert pipeline.trim_opening(src, short_tl, desc) == (src, desc, 0.0)       # a real hook stays
+
+
+def test_3d_falls_back_to_2d_when_this_machine_is_too_slow(monkeypatch, tmp_path):
+    from app.render import episode as epr, three_d
+    from app.kids.writer import template_script
+    monkeypatch.setattr(three_d, "available", lambda: True)
+    monkeypatch.setattr(three_d, "seconds_per_frame", lambda job, wd, n=4: 7.0)      # a CPU-only runner
+    seen = []
+    monkeypatch.setattr(epr, "_size", lambda s: (_ for _ in ()).throw(RuntimeError(f"2D:{s.get('_style')}")))
+    s = template_script("numbers", "Counting", "preschool", 3, seed=1)
+    try:
+        epr.render(s, {"_style": "toy3d", "render_3d_max_minutes": 120}, tmp_path, log=seen.append)
+    except RuntimeError as e:
+        assert str(e) == "2D:classic"                    # went on to the 2D renderer
+    assert any("rendering in the classic 2D look" in m for m in seen)
+    monkeypatch.setattr(three_d, "seconds_per_frame", lambda job, wd, n=4: 0.2)      # a GPU: 3D goes ahead
+    monkeypatch.setattr(three_d, "render_video", lambda *a, **k: {"ok": "3d"})
+    assert epr.render(s, {"_style": "toy3d"}, tmp_path, log=seen.append) == {"ok": "3d"}
+    three_d.check_speed(s, {"render_3d_max_minutes": 120}, tmp_path, seen.append)    # fast enough: no raise
