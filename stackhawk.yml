@@ -1,0 +1,46 @@
+# HawkScan (StackHawk DAST) config. Scans a LOCAL, throwaway copy of the backend — never production:
+# scripts/stackhawk-scan.sh starts it with .env switched off, an empty temp database, no Supabase/YouTube/AI keys
+# and the scheduler off, so attack requests can't touch the live channel. No secrets live in this file:
+# the scan password is generated per run and passed in as SCAN_PASSWORD.
+app:
+  applicationId: ${APP_ID:5514af5b-6ed5-4cdb-94e5-12441131c27c}
+  env: ${APP_ENV:Production}
+  host: ${APP_HOST:http://localhost:8765}
+  # FastAPI serves its own spec: every route, method and body schema
+  openApiConf:
+    path: /openapi.json
+  authentication:
+    usernamePassword:
+      type: JSON
+      loginPath: /api/login
+      usernameField: username          # ignored by the app (one owner password); HawkScan requires the field
+      passwordField: password
+      scanUsername: owner
+      scanPassword: ${SCAN_PASSWORD}
+    tokenExtraction:
+      type: TOKEN_PATH
+      value: "$.token"
+    tokenAuthorization:
+      type: HEADER
+      value: Authorization
+      tokenType: Bearer
+      isJWT: true
+    testPath:
+      path: /api/me
+      success: ".*200.*"
+  excludePaths:
+    - "/api/login"                     # 8 wrong passwords lock the scanner out for 10 minutes
+
+hawk:
+  spider:
+    base: false                        # the spec lists every route
+
+tags:
+  - name: git_origin
+    value: ashwin-j23/cartoonforge
+  - name: _STACKHAWK_AGENT
+    value: ${HAWK_AGENT:none}
+  - name: _STACKHAWK_GIT_COMMIT_SHA
+    value: ${COMMIT_SHA:none}
+  - name: _STACKHAWK_GIT_BRANCH
+    value: ${BRANCH_NAME:none}

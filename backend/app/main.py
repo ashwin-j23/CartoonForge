@@ -52,6 +52,22 @@ if SETUP_PROBLEMS:
 if config.CORS_ORIGINS:
     app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
+# Security headers on every response (HawkScan findings: CSP, anti-clickjacking, nosniff). The same set is in
+# vercel.json for the dashboard Vercel serves. Keep the two CSP strings identical.
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src"
+       " 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co https://i.ytimg.com; media-src 'self"
+       "' blob: https://*.supabase.co; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+SECURITY_HEADERS = {"Content-Security-Policy": CSP, "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff",
+                    "Referrer-Policy": "strict-origin-when-cross-origin"}
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for k, v in SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    return response
+
 
 # ---------------------------------------------------------------- auth
 def _token() -> str:
