@@ -577,12 +577,10 @@ def template_script(category_id: str, topic: str, band_id: str, minutes: float =
         return {"kind": "game", "title": "More or Less", "set": sets_[(gidx + 1) % len(sets_)], "scenes": sc}
 
     # ---- assemble -----------------------------------------------------------------------------------------------
-    hello = [S("sunny", "Hello, hello, little sprouts! It's a sunny day!", act="wave"),
-             S("hoppy", "Hop to it, friends! I'm Hoppy!", act="jump", emo="excited", on=["hoppy", "pip", "mimi"]),
-             S("pip", "Hi! I'm Pip!", act="wave", emo="excited", on=["hoppy", "pip", "mimi"]),
-             S("mimi", "And I'm Mimi! Hello, friend!", act="wave", on=["hoppy", "pip", "mimi"]),
-             S("bo", "And me, Bo! Oopsie-daisy, I almost forgot to wave!", act="wave", on=["hoppy", "bo", "pip"]),
-             S("sunny", f"Today we are {topic.lower()}. Are you ready? Let's go!", "question", act="jump")]
+    # the hook: open straight on the thing the title promises (no roll call; viewers decide in seconds)
+    hello = [S("hoppy", f"Look at all these {_plural(objs[0])}! Can you count them with me?", "question", act="point",
+               emo="excited", on=["hoppy", "pip", "mimi"]),
+             S("sunny", f"Today we are {topic.lower()}. Let's go!", act="jump", on=["hoppy", "sunny", "mimi"])]
     segs = [{"kind": "hello", "title": "Hello!", "set": sets_[0], "scenes": hello}]
     core = [counting_round, song, movement]                    # always: learn, sing, move
     extra = [feelings, counting_round, story, game, song, counting_round, movement, game, counting_round]

@@ -161,8 +161,8 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
     if ch:                                    # parents jump to the song: timestamps right under the summary
         parts += [ch, ""]
     if settings.get("growth_cta", True):
-        parts += [f"👉 Grown-ups: subscribe to {name} for new episodes every day — songs, stories and learning "
-                  f"your child will ask for again and again!{sub_link}", ""]
+        parts += [f"👉 Grown-ups: subscribe to {name} for songs, stories and learning your child will ask "
+                  f"for again and again!{sub_link}", ""]
     if goals:
         parts += ["In this episode your child will:"] + [f"• {g}" for g in goals] + [""]
     parts += parts_src + [cast_line, "",

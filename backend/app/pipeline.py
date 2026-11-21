@@ -489,14 +489,22 @@ SHORT_GAP = timedelta(minutes=60)    # no two videos go live closer than this: e
 
 
 def short_slot(at: datetime) -> str:
-    """`at`, or the next half hour after it with no other video (Short or episode) within SHORT_GAP."""
+    """`at`, or the first later time with no other video within SHORT_GAP and no other Short on the same day:
+    one Short a day, so each gets the Shorts feed's whole test window to itself."""
     db = get_db()
-    used = [_parse(e.get("publish_at")) for e in db.query("episodes", in_={"status": ["approved", "publishing"]})]
-    used += [_parse(e.get("published_at")) for e in db.query("episodes", eq={"status": "published"}, limit=200)]
-    used = [u for u in used if u]
+    rows = db.query("episodes", in_={"status": ["approved", "publishing"]}, limit=500)
+    rows += db.query("episodes", eq={"status": "published"}, limit=200)
+    used = [(_parse(e.get("publish_at") if e.get("status") != "published" else e.get("published_at")),
+             e.get("kind") == "short") for e in rows]
+    used = [(u, short) for u, short in used if u]
     at = at.astimezone(timezone.utc).replace(second=0, microsecond=0)
-    while any(abs(at - u) < SHORT_GAP for u in used):
-        at += timedelta(minutes=30)
+    for _ in range(24 * 60):
+        if any(short and u.date() == at.date() for u, short in used):
+            at += timedelta(days=1)
+        elif any(abs(at - u) < SHORT_GAP for u, _ in used):
+            at += timedelta(minutes=30)
+        else:
+            break
     return at.isoformat(timespec="seconds")
 
 

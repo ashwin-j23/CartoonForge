@@ -49,12 +49,14 @@ def test_bedtime_episodes_take_the_last_slot_of_the_day():
     assert datetime.fromisoformat(at).astimezone(ZoneInfo(s["timezone"])).strftime("%H:%M") == max(s["post_times"])
 
 
-def test_shorts_never_share_a_time():
+def test_one_short_a_day_and_never_on_top_of_an_episode():
     db = get_db()
-    at = datetime(2030, 1, 1, 23, 0, tzinfo=timezone.utc)
+    at = datetime(2030, 1, 1, 15, 0, tzinfo=timezone.utc)
     db.insert("episodes", {"kind": "short", "status": "approved", "topic": "A", "publish_at": at.isoformat(timespec="seconds")})
-    assert pipeline.short_slot(at).startswith("2030-01-02T00:00")          # same minute -> an hour later
-    assert pipeline.short_slot(at + timedelta(minutes=2)).startswith("2030-01-02T00:02")   # 2 min apart is too close
+    assert pipeline.short_slot(at + timedelta(hours=3)).startswith("2030-01-02T18:00")   # that day has its Short
+    db.insert("episodes", {"kind": "episode", "status": "approved", "topic": "E",
+                           "publish_at": datetime(2030, 1, 3, 13, 0, tzinfo=timezone.utc).isoformat(timespec="seconds")})
+    assert pipeline.short_slot(datetime(2030, 1, 3, 13, 10, tzinfo=timezone.utc)).startswith("2030-01-03T14:10")   # an hour clear of it
 
 
 def test_overdue_video_on_a_full_day_moves_to_a_new_slot(monkeypatch):

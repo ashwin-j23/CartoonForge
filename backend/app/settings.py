@@ -12,7 +12,8 @@ DEFAULTS: dict = {
     "channel_name": "Hoppy Hop Hop",
     "channel_handle": "@HoppyHopHopTV",
     "site_url": "",
-    "feedback_cta": True,                 # end card asks grown-ups for feedback (link in the description)                       # the dashboard's public address (saved by Vercel; used for feedback links)  # youtube.com/@HoppyHopHopTV (used in descriptions)
+    "feedback_cta": False,                # end card + description link asking grown-ups for feedback (off: an outside
+                                          # link in every description reads as template-made)
     "channel_tagline": "Songs, stories and smiles for curious little minds",
     "language": "en",                     # main episode language (ISO 639-1)
     "timezone": "America/New_York",       # posting times follow this zone (auto-moved to where viewers are)
@@ -78,7 +79,7 @@ DEFAULTS: dict = {
     "book_series_per_day": 1,             # how many of the daily episodes come from the book series
     "opening_jingle": False,              # False = open straight on the hook line (no logo/title card at the top)
     "compilation_weekly": True,           # weekly long compilation of the best episodes (watch time)
-    "compilation_minutes": 45,
+    "compilation_minutes": 25,            # 20-30 min of the best episodes: TV families play it through
     "compilation_weekday": 5,             # 5 = Saturday (weekend family viewing)                  # 0.667 = 1280x720 render (2.2x faster)
 }
 

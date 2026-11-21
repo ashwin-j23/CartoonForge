@@ -40,7 +40,7 @@ BW, BH = 2560, 1440
 SAFE = (507, 508, 2053, 931)
 BAND = (0, 508, 2560, 931)
 NAME = "Hoppy Hop Hop"
-RIBBON = "New cartoons every day!"
+RIBBON = "Songs & stories for little ones!"
 
 
 def _setup():

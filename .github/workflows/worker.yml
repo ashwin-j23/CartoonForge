@@ -39,6 +39,24 @@ jobs:
           cache-dependency-path: backend/requirements-render.txt
       - name: Install ffmpeg + fonts
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core > /dev/null
+      - name: Cache Blender (3D cartoon look)
+        uses: actions/cache@v4
+        with:
+          path: backend/tools
+          key: blender-4.5.16-linux-x64
+      - name: Install Blender 4.5.16 LTS (checksum-verified)
+        working-directory: backend
+        run: |
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libgl1 libegl1 > /dev/null
+          if [ ! -x tools/blender/blender ]; then
+            mkdir -p tools && cd tools
+            curl -fsSL -o blender.tar.xz https://download.blender.org/release/Blender4.5/blender-4.5.16-linux-x64.tar.xz
+            echo "23432b064977908beb1ab4b7f32f024e7331105c875c187dce002aff84b10c11  blender.tar.xz" | sha256sum -c -
+            tar -xJf blender.tar.xz && rm blender.tar.xz
+            ln -sfn blender-4.5.16-linux-x64 blender
+            cd ..
+          fi
+          tools/blender/blender --version | head -1
       - name: Install deps
         run: pip install -r backend/requirements-render.txt
       - name: Cache voice model (Kokoro ~350 MB)

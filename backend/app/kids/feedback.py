@@ -47,6 +47,8 @@ def with_link(description: str, eid: str) -> str:
     """Add the grown-ups' feedback line after the opening paragraph (once)."""
     url = link(eid)
     description = description or ""
+    if not app_settings().get("feedback_cta", False):
+        return without_link(description)
     if not url or url in description:
         return description
     # replace an older feedback line (e.g. a wrong address) instead of adding a second one
@@ -55,6 +57,11 @@ def with_link(description: str, eid: str) -> str:
     paras = description.split("\n\n")
     k = 2 if len(paras) > 1 and paras[1].startswith("0:00") else 1     # keep summary + timestamps together on top
     return "\n\n".join(paras[:k] + [line] + paras[k:])
+
+
+def without_link(description: str) -> str:
+    """The description with the feedback line taken out."""
+    return "\n\n".join(p for p in (description or "").split("\n\n") if not p.startswith(LINE_START))
 
 
 def scrub(text: str, limit: int) -> str:

@@ -47,7 +47,7 @@ class Timeline:
         self.channel = settings.get("channel_name", "Hoppy Hop Hop")
         self.cta = settings.get("cta_line", "") if settings.get("growth_cta", True) else ""
         # YouTube turns comments off on made-for-kids videos: the end card points grown-ups to the feedback form
-        self.fb_cta = (settings.get("feedback_cta_line") or FEEDBACK_CTA) if settings.get("feedback_cta", True) else ""
+        self.fb_cta = (settings.get("feedback_cta_line") or FEEDBACK_CTA) if settings.get("feedback_cta", False) else ""
         band = script.get("age_band", "preschool")
         self.captions_all = settings.get("captions_burned", True) and band in ("early", "big")
         self.captions_song = settings.get("captions_burned", True)

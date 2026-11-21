@@ -54,8 +54,16 @@ def test_falls_back_to_the_activity_log_without_the_table(monkeypatch):
     assert any(r.get("request") == "trains" for r in feedback.rows())
 
 
+def test_no_outside_link_unless_feedback_is_switched_on():
+    save_app_settings({"site_url": "https://cartoonforge.vercel.app", "feedback_cta": False})
+    old = "Hook.\n\n👨‍👩‍👧 Grown-ups: how was this episode? Tell us 👉 https://x/#/feedback?v=e1\n\nMore."
+    assert feedback.with_link("Hook.\n\nMore.", "e1") == "Hook.\n\nMore."
+    assert feedback.with_link(old, "e1") == "Hook.\n\nMore."                 # an old line is taken out
+    save_app_settings({"site_url": ""})
+
+
 def test_description_gets_the_feedback_link_once():
-    save_app_settings({"site_url": "https://cartoonforge.vercel.app"})
+    save_app_settings({"site_url": "https://cartoonforge.vercel.app", "feedback_cta": True})
     d = feedback.with_link("Hook line.\n\nMore text.", "abc123")
     assert d.startswith("Hook line.\n\n👨‍👩‍👧 Grown-ups") and "https://cartoonforge.vercel.app/#/feedback?v=abc123" in d
     assert feedback.with_link(d, "abc123") == d
@@ -64,13 +72,14 @@ def test_description_gets_the_feedback_link_once():
 
 def test_never_links_to_localhost_and_replaces_an_old_line(monkeypatch):
     monkeypatch.setattr(config, "PUBLIC_BASE_URL", "http://localhost:8000")
-    save_app_settings({"site_url": "https://cartoonforge.vercel.app"})
+    save_app_settings({"site_url": "https://cartoonforge.vercel.app", "feedback_cta": True})
     assert feedback.site_url() == "https://cartoonforge.vercel.app"
     old = "Hook.\n\n👨‍👩‍👧 Grown-ups: how was this episode? Tell us 👉 http://localhost:8000/#/feedback?v=e1\n\nMore."
     new = feedback.with_link(old, "e1")
     assert "localhost" not in new and new.count("Grown-ups: how was this episode?") == 1
     save_app_settings({"site_url": ""})
     assert feedback.site_url() == "" and feedback.with_link("x", "e1") == "x"      # no public address: no link
+    save_app_settings({"feedback_cta": False})
 
 
 def test_end_card_asks_grown_ups_for_feedback():
@@ -79,7 +88,8 @@ def test_end_card_asks_grown_ups_for_feedback():
     from app.render.episode import estimate_audio
     s = template_script("numbers", "Counting", "preschool", 3, seed=1)
     snd = estimate_audio(s, 24)
-    on = fr.Timeline(s, snd, 320, 180, 24, {"pace": "calm", "art_style": "classic", "channel_name": "Hoppy Hop Hop"})
+    on = fr.Timeline(s, snd, 320, 180, 24, {"pace": "calm", "art_style": "classic", "channel_name": "Hoppy Hop Hop",
+                                            "feedback_cta": True})
     off = fr.Timeline(s, snd, 320, 180, 24, {"pace": "calm", "art_style": "classic", "channel_name": "Hoppy Hop Hop",
                                              "feedback_cta": False})
     assert on.fb_cta == fr.FEEDBACK_CTA and off.fb_cta == ""

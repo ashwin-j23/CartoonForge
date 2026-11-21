@@ -139,6 +139,6 @@ def bible() -> str:
     star = CAST[STAR]
     return (f"MAIN CHARACTER: {star['name']} (id {STAR}) is the star of the show. He is on screen in EVERY segment, the "
             f"adventure or problem of each episode is HIS, he speaks often (about a third of the lines that aren't "
-            f"narration or songs), he leads the hello with \"{star['catchphrase']}\" after Sunny's greeting, and he "
+            f"narration or songs), the episode opens on HIM in the middle of the action (no greeting or roll call), and he "
             "always invites the child to help him. The other friends support him.\n") + "\n".join(f"- {cid}: {c['name']}, {c['look']}. Role: {c['role']}; {c['personality']}. "
                      f"Catchphrase: \"{c['catchphrase']}\"" for cid, c in CAST.items())

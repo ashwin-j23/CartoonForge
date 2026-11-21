@@ -187,6 +187,10 @@ def checklist() -> list[dict]:
     free_gb = shutil.disk_usage(config.DATA_DIR).free / 1e9
     style = s.get("art_style", "auto")
     sched = config.INTERNAL_SCHEDULER == "1" or config.WORKER_MODE == "github" or bool(config.CRON_SECRET)
+    blender = three_d.available()
+    if config.WORKER_MODE == "github":           # rendering happens on the GitHub runner: trust what it reported
+        from .db import get_db
+        blender = bool((get_db().get_setting("heartbeat", {}) or {}).get("worker_blender", blender))
     return [
         {"id": "ai", "title": "AI writer key", "ok": has_ai(), "need": True,
          "detail": "Gemini or Groq (free) in Settings → Keys. Without it only demo episodes are made, and demos are never auto-published."},
@@ -196,8 +200,10 @@ def checklist() -> list[dict]:
          "detail": "Settings → kill switch. While on, nothing is published."},
         {"id": "heartbeat", "title": "Heartbeat running", "ok": sched, "need": True,
          "detail": "This server ticks every 5 minutes (INTERNAL_SCHEDULER=1), or the GitHub render farm / a cron calls /api/cron/tick."},
-        {"id": "renderer", "title": "Renderer ready", "ok": style != "toy3d" or three_d.available(), "need": True,
-         "detail": "The 3D cartoon look needs Blender in backend/tools/blender; other looks need nothing."},
+        {"id": "renderer", "title": "Renderer ready", "ok": style != "toy3d" or blender, "need": True,
+         "detail": ("Blender ready for the 3D cartoon look." if blender else
+                    "The 3D cartoon look needs Blender: the GitHub worker installs it on its next run "
+                    "(locally: backend/tools/blender). Other looks need nothing.")},
         {"id": "disk", "title": "Disk space", "ok": free_gb > 5, "need": False, "detail": f"{free_gb:.0f} GB free (each episode ~0.2-0.5 GB while rendering)."},
         {"id": "kids", "title": "Made for kids", "ok": bool(s.get("made_for_kids", True)), "need": True,
          "detail": "Locked on (COPPA)."},

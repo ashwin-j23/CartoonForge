@@ -19,7 +19,10 @@ def _mark_worker() -> None:
     from .db import get_db
     try:
         db = get_db()
-        db.set_setting("heartbeat", {**(db.get_setting("heartbeat", {}) or {}), "worker_at": time.time()})
+        from .render import three_d
+        # the dashboard (Vercel) can't see the render farm's disk: the farm says whether it has Blender (3D look)
+        db.set_setting("heartbeat", {**(db.get_setting("heartbeat", {}) or {}), "worker_at": time.time(),
+                                     "worker_blender": three_d.available()})
     except Exception:  # noqa: BLE001
         pass
 

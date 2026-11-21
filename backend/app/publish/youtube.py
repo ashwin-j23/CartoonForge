@@ -137,7 +137,8 @@ def set_watermark(data: bytes, ctype: str, refresh_token: str = "") -> None:
 
 
 def update_video(video_id: str, refresh_token: str = "", title: str | None = None, description: str | None = None,
-                 privacy: str | None = None, tags: list[str] | None = None) -> dict:
+                 privacy: str | None = None, tags: list[str] | None = None, made_for_kids: bool | None = None,
+                 publish_at: str | None = None) -> dict:
     """Edit a live video. snippet/status are replaced whole, so the current values are read first."""
     tok = _access_token(refresh_token)
     h = {"Authorization": f"Bearer {tok}"}
@@ -160,6 +161,10 @@ def update_video(video_id: str, refresh_token: str = "", title: str | None = Non
         sn["tags"] = [t for t in tags if len(t) <= 40][:15]
     if privacy in ("public", "unlisted", "private"):
         st["privacyStatus"] = privacy
+    if made_for_kids is not None:
+        st["selfDeclaredMadeForKids"] = bool(made_for_kids)
+    if publish_at:                               # schedule: YouTube makes a private video public at this time
+        st["privacyStatus"], st["publishAt"] = "private", publish_at
     r = httpx.put("https://www.googleapis.com/youtube/v3/videos", timeout=30, headers=h, params={"part": "snippet,status"},
                   json={"id": video_id, "snippet": sn, "status": st})
     if r.status_code >= 400:
@@ -289,8 +294,23 @@ def upload(path: Path, title: str, description: str, tags: list[str], privacy: s
                            headers={"Authorization": f"Bearer {tok}", "Content-Type": "image/jpeg"})
         except Exception:  # noqa: BLE001
             pass
+    if made_for_kids:
+        _ensure_made_for_kids(vid, refresh_token)
     link = f"https://youtube.com/shorts/{vid}" if short else f"https://youtu.be/{vid}"
     return {"id": vid, "url": link, "privacy": privacy}
+
+
+def _ensure_made_for_kids(video_id: str, refresh_token: str = "") -> None:
+    """Read the flag back after upload and set it again if YouTube didn't keep it: all 23 early Shorts came out
+    'Not made for kids' although the upload said made for kids (a COPPA risk for toddler videos)."""
+    try:
+        r = httpx.get("https://www.googleapis.com/youtube/v3/videos", timeout=30, params={"part": "status", "id": video_id},
+                      headers={"Authorization": f"Bearer {_access_token(refresh_token)}"})
+        items = r.json().get("items") or [] if r.status_code == 200 else []
+        if items and items[0]["status"].get("selfDeclaredMadeForKids") is not True:
+            update_video(video_id, refresh_token, made_for_kids=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[youtube] could not confirm made-for-kids on {video_id}: {e}")
 
 
 def delete(video_id: str, refresh_token: str = "") -> None:
