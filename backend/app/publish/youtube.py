@@ -313,6 +313,37 @@ def _ensure_made_for_kids(video_id: str, refresh_token: str = "") -> None:
         print(f"[youtube] could not confirm made-for-kids on {video_id}: {e}")
 
 
+def enforce_made_for_kids(refresh_token: str = "") -> list[str]:
+    """Every video on the channel must stay 'made for kids' (COPPA: they're all for toddlers). Uploads ask for it and
+    read it back, yet on Nov 23 all 25 Shorts showed 'not made for kids' again, so the worker re-checks the whole
+    channel and switches back any that lost it. Returns the ids it fixed. Quota: ~2 units a check + 50 per fix."""
+    h = {"Authorization": f"Bearer {_access_token(refresh_token)}"}
+    ch = httpx.get("https://www.googleapis.com/youtube/v3/channels", timeout=30, headers=h,
+                   params={"part": "contentDetails", "mine": "true"})
+    ch.raise_for_status()
+    uploads = ch.json()["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    ids, page = [], None
+    while True:
+        r = httpx.get("https://www.googleapis.com/youtube/v3/playlistItems", timeout=30, headers=h,
+                      params={"part": "contentDetails", "playlistId": uploads, "maxResults": 50, **({"pageToken": page} if page else {})})
+        r.raise_for_status()
+        j = r.json()
+        ids += [i["contentDetails"]["videoId"] for i in j.get("items", [])]
+        page = j.get("nextPageToken")
+        if not page:
+            break
+    fixed = []
+    for i in range(0, len(ids), 50):
+        r = httpx.get("https://www.googleapis.com/youtube/v3/videos", timeout=30, headers=h,
+                      params={"part": "status", "id": ",".join(ids[i:i + 50])})
+        r.raise_for_status()
+        for v in r.json().get("items", []):
+            if v["status"].get("selfDeclaredMadeForKids") is not True:
+                update_video(v["id"], refresh_token, made_for_kids=True)
+                fixed.append(v["id"])
+    return fixed
+
+
 def delete(video_id: str, refresh_token: str = "") -> None:
     """Remove an upload (takedown requests). Needs the force-ssl scope the channel was connected with."""
     r = httpx.delete("https://www.googleapis.com/youtube/v3/videos", params={"id": video_id}, timeout=30,

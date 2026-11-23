@@ -583,7 +583,8 @@ def make_short(parent_id: str, n: int = 0) -> dict:
         from .kids import hashtags
         idea = (p['script'] or {}).get('title_idea') or p['topic']
         # say what the Short really is: a sing-along only when it IS the song; otherwise the topic's search phrase
-        tail = "🎵 Sing Along for Kids" if songs else f"| {cat['name'].split('&')[0].strip()} for Kids"
+        # the 3 Shorts that took off of the first 14 all ended "🎵 Sing Along! #shorts" (Nov 21 Studio report)
+        tail = "🎵 Sing Along! #shorts" if songs else f"| {cat['name'].split('&')[0].strip()} for Kids #shorts"
         title = f"{idea} {tail}"[:100]
         full = int((p.get('duration') or 600) // 60)
         desc = (f"{'Sing along' if songs else 'Watch'} with Hoppy and friends! The full {full}-minute episode "
@@ -878,6 +879,17 @@ def tick(render_work: bool = True, budget_s: int = 2700) -> dict:
                 out["trends"] = trends.scan(lambda m: log(m)).get("ideas")
             except Exception as e:  # noqa: BLE001
                 out["trends"] = f"skipped: {str(e)[:120]}"
+        from .settings import secret
+        if time.time() - float(db.get_setting("mfk_checked_at") or 0) > 6 * 3600 and secret("YT_REFRESH_TOKEN"):
+            db.set_setting("mfk_checked_at", time.time())     # every 6 h: no video may lose 'made for kids'
+            try:
+                from .publish import youtube
+                fixed = youtube.enforce_made_for_kids()
+                if fixed:
+                    log(f"Made for kids was off on {len(fixed)} video(s) on YouTube; switched back on: {', '.join(fixed)}", level="warn")
+                out["made_for_kids"] = fixed
+            except Exception as e:  # noqa: BLE001
+                out["made_for_kids"] = f"skipped: {str(e)[:120]}"
         try:                                       # every heartbeat: clean at 85%+, deep clean every 3 days
             from . import janitor
             out["storage"] = janitor.maintain()
