@@ -435,7 +435,8 @@ def publish(eid: str, force: bool = False) -> dict:
                 log(f"Opening was {cut:.0f}s: the video now starts on the story (viewers leave long greetings)", ep=eid)
         res = youtube.upload(local, meta.get("title", ep["topic"]), desc, meta.get("tags", []),
                              privacy, thumb, lang.split("-")[0], meta.get("localizations"),
-                             rt, meta.get("category_id", "27"), made_for_kids=True,
+                             rt, meta.get("category_id", "27"),
+                             made_for_kids=bool(s.get("shorts_made_for_kids", False)) if ep.get("kind") == "short" else True,
                              synthetic=bool(s.get("ai_disclosure")), short=ep.get("kind") == "short", publish_at=when)
         if when:
             res = {**res, "privacy": "public", "scheduled_for": when}
@@ -881,10 +882,11 @@ def tick(render_work: bool = True, budget_s: int = 2700) -> dict:
                 out["trends"] = f"skipped: {str(e)[:120]}"
         from .settings import secret
         if time.time() - float(db.get_setting("mfk_checked_at") or 0) > 6 * 3600 and secret("YT_REFRESH_TOKEN"):
-            db.set_setting("mfk_checked_at", time.time())     # every 6 h: no video may lose 'made for kids'
+            db.set_setting("mfk_checked_at", time.time())     # every 6 h: no long video may lose 'made for kids' (Shorts: owner's choice)
             try:
                 from .publish import youtube
-                fixed = youtube.enforce_made_for_kids()
+                shorts = {(e.get("youtube") or {}).get("id") for e in db.query("episodes", eq={"kind": "short"}, limit=500, light=True)}
+                fixed = youtube.enforce_made_for_kids(skip=shorts - {None})
                 if fixed:
                     log(f"Made for kids was off on {len(fixed)} video(s) on YouTube; switched back on: {', '.join(fixed)}", level="warn")
                 out["made_for_kids"] = fixed

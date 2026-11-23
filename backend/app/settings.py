@@ -37,6 +37,7 @@ DEFAULTS: dict = {
     "category_mix": {"feelings": 1.8, "stories": 1.8, "bedtime": 1.6},   # what won: sharing stories, fables, bedtime
     "youtube_privacy": "public",
     "made_for_kids": True,                # COPPA: must stay True for content aimed at children
+    "shorts_made_for_kids": False,        # owner's choice (Nov 23): Shorts go up as 'not made for kids'; long videos stay made for kids
     "ai_disclosure": False,               # YouTube's synthetic-media label (needed only for realistic content)
     "localize_languages": ["es", "hi", "pt", "fr", "ar", "id", "de", "ja", "ru", "ta", "zh-Hans", "ko"],
     "editions": [],                       # full dubbed editions to render per episode, e.g. ["es", "hi"]

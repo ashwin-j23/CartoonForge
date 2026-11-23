@@ -5,6 +5,7 @@ cards/end screens and personalised ads on it — the show is designed around tha
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -313,10 +314,12 @@ def _ensure_made_for_kids(video_id: str, refresh_token: str = "") -> None:
         print(f"[youtube] could not confirm made-for-kids on {video_id}: {e}")
 
 
-def enforce_made_for_kids(refresh_token: str = "") -> list[str]:
-    """Every video on the channel must stay 'made for kids' (COPPA: they're all for toddlers). Uploads ask for it and
-    read it back, yet on Nov 23 all 25 Shorts showed 'not made for kids' again, so the worker re-checks the whole
-    channel and switches back any that lost it. Returns the ids it fixed. Quota: ~2 units a check + 50 per fix."""
+def enforce_made_for_kids(refresh_token: str = "", skip: set[str] | None = None) -> list[str]:
+    """Long videos must stay 'made for kids' (COPPA: they're for toddlers); the worker re-checks the channel and
+    switches back any that lost it. Shorts are left alone: the owner keeps them 'not made for kids' (Nov 23).
+    A Short is an id in `skip` (the studio's own Shorts) or anything 3 minutes or shorter.
+    Returns the ids it fixed. Quota: ~2 units a check + 50 per fix."""
+    skip = skip or set()
     h = {"Authorization": f"Bearer {_access_token(refresh_token)}"}
     ch = httpx.get("https://www.googleapis.com/youtube/v3/channels", timeout=30, headers=h,
                    params={"part": "contentDetails", "mine": "true"})
@@ -335,9 +338,13 @@ def enforce_made_for_kids(refresh_token: str = "") -> list[str]:
     fixed = []
     for i in range(0, len(ids), 50):
         r = httpx.get("https://www.googleapis.com/youtube/v3/videos", timeout=30, headers=h,
-                      params={"part": "status", "id": ",".join(ids[i:i + 50])})
+                      params={"part": "status,contentDetails", "id": ",".join(ids[i:i + 50])})
         r.raise_for_status()
         for v in r.json().get("items", []):
+            m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", (v.get("contentDetails") or {}).get("duration") or "")
+            secs = sum(int(x or 0) * k for x, k in zip(m.groups(), (3600, 60, 1))) if m else 0
+            if v["id"] in skip or (0 < secs <= 180):
+                continue
             if v["status"].get("selfDeclaredMadeForKids") is not True:
                 update_video(v["id"], refresh_token, made_for_kids=True)
                 fixed.append(v["id"])
