@@ -115,14 +115,17 @@ def render(ep: dict, lang: str, picture: Path, work: Path, log=print) -> tuple[P
 
 
 # ---------------------------------------------------------------- words around the video
-def dub_meta(ep: dict, lang: str) -> dict:
-    """Title, description and tags in the dub's language (the English ones are the fallback)."""
+def dub_meta(ep: dict, lang: str, script: dict | None = None) -> dict:
+    """Title, description (with the chapters named in the dub's language) and tags for the dubbed channel."""
     m = ep.get("meta") or {}
     loc = (m.get("localizations") or {}).get(lang) or metamod.localize(m, [lang]).get(lang) or {}
     if not loc.get("title"):
         raise RuntimeError(f"Title not translated into {languages.name(lang)} (AI busy)")
     native = languages.LANGS[lang][1]
     desc = re.sub(r"\S*youtube\.com/@\S+", "", loc.get("description") or "").replace("👉 \n", "\n").strip()
+    if script and len(ep.get("timeline") or []) == len(script["segments"]):
+        ch = metamod.chapters([{**g, "title": seg["title"]} for g, seg in zip(ep["timeline"], script["segments"])])
+        desc = re.sub(r"(?m)^\d+:\d\d .*(?:\n\d+:\d\d .*)+", lambda _: ch, desc, count=1) if ch else desc
     tags = [f"{native} cartoon", f"{languages.name(lang)} cartoon for kids", f"{languages.name(lang)} kids songs",
             f"{languages.name(lang)} stories for kids"] + list(m.get("tags") or [])
     return {"title": loc["title"][:100], "description": desc, "tags": tags, "playlist": f"{native} · {app_settings().get('channel_name', 'Hoppy Hop Hop')}"}
@@ -181,7 +184,7 @@ def make(eid: str, lang: str, picture: Path | None = None, log=print) -> dict:
         if _height(picture) < 720:
             raise RuntimeError("Only the small preview of this episode is left; render it again to dub it")
         video, script = render(ep, lang, picture, work, log)
-        meta = dub_meta(ep, lang)
+        meta = dub_meta(ep, lang, script)
         th = thumb(ep, lang, work / "thumb.jpg")
         rows = db.query("episodes", in_={"status": ["approved", "published"]}, limit=500, light=True)
         when = next_slot(rows, live_at(ep) or datetime.now(timezone.utc))
