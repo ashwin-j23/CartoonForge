@@ -87,6 +87,8 @@ def outline(category: dict, topic: str, band_id: str, minutes: float, lang: str 
             "\"segments\": [{\"kind\": str, \"title\": str (2-4 words, shown as a chapter), \"set\": str, "
             "\"minutes\": number, \"wonder\": str (the question that opens it), \"beats\": [3-6 short story/teaching beats], "
             "\"song_idea\": str (only for song)}]}\n"
+            "The segment right after hello is at most 1.2 minutes and its first beat is the story's PROBLEM already "
+            "happening; slow scene-setting comes later.\n"
             f"Minutes must add up to about {minutes:.0f}. hello ≈ 0.2, goodbye ≈ 0.6, recap ≈ 1, songs ≈ 1.2-1.6, "
             f"others share the rest (each 1.5-{b['segment'] + 0.6:.1f}).")
     data, _ = complete_json(system, user + "\nReturn compact (minified) JSON.", temperature=0.8, max_tokens=6000,
@@ -115,13 +117,14 @@ def write_segment(seg: dict, plan: dict, category: dict, band_id: str, prev_tail
               "by a character to a child watching. Reply with JSON only.")
     kind = seg["kind"]
     extra = {
-        "hello": "THE HOOK (most viewers decide in the first 10 seconds): AT MOST 4 short lines, about 12 seconds. "
-                 "The episode opens straight on this line (no title card): Line 1 is said with high energy and is an "
-                 "excited look-and-question that NAMES the exact thing the title promises, so the child sees it in the "
-                 "first 5 seconds ('Look at all this yummy food! Who wants to share with Bo?', 'Look, a dinosaur bone! "
-                 "Can you find it?'). Line 2 is Sunny's catchphrase "
-                 f"\"{cast.CAST['sunny']['catchphrase']}\". Then ONE line saying what we'll do, and go. NO roll call of "
-                 "friends, no 'how are you', no long welcome: the friends say hello inside the action.",
+        "hello": "THE COLD OPEN (most viewers decide in the first 10 seconds; ours left at 0:34): EXACTLY 3 short lines, "
+                 "about 8 seconds, no title card, no greeting, no catchphrase, no names being introduced. "
+                 "Line 1: something HAPPENS, mid-action, to the character this episode is about: the story's problem or "
+                 "surprise, shown not explained, max 9 words ('Oh no! My wagon is stuck in the mud!', 'Ta-da! A great "
+                 "big present for you, Hoppy!'). Line 2: hoppy, kind=question, turns to the child and asks them to say or "
+                 "do ONE thing about it, naming what the title promises, max 10 words ('Can you push with me? Say: push, "
+                 "push!'). Line 3: hoppy, one line with the promise of the episode, max 10 words ('Let's get that wagon "
+                 "out!'). (The song's chorus is added after line 2 automatically.) Then the story starts.",
         "goodbye": "Recap one thing we learned, praise the child's effort (listening, counting, singing), a calm "
                    "goodbye from every friend, a tiny 'next time we will…' preview that makes them want to come back, "
                    "'See you next time, little sprouts!'. Calm, slower.",
@@ -142,6 +145,11 @@ def write_segment(seg: dict, plan: dict, category: dict, band_id: str, prev_tail
         "learn": "Teach one idea step by step with cards on screen exactly when the words are said; Pip makes one "
                  "small mistake that the child helps fix.",
     }.get(kind, "")
+    if seg.get("first") and not fix_notes.startswith("CONTINUE"):
+        extra += (" THIS IS THE FIRST SEGMENT AFTER THE COLD OPEN, and most viewers leave here: start in the middle of the "
+                  "problem (no 'snuggle in', no 'today's story', no scene-setting first), something new happens every "
+                  "2 lines, and a question to the child comes within the first 4 lines. Explain the place and the friends "
+                  "only once the problem is running.")
     user = (f"EPISODE: {plan.get('title_idea')} — {category['name']}. Key words: {plan.get('key_words')}. "
             f"Lesson: {plan.get('lesson', '')}\n{psychology.writer_brief(band_id)}\nCAST:\n{cast.bible()}\n"
             f"{_guest_bible(plan.get('characters'))}\n"
@@ -183,15 +191,54 @@ def clean_scenes(scenes: list, seg: dict, category: dict, guests: set | None = N
         out.append({"speaker": spk, "text": text[:400], "kind": kind,
                     "emotion": sc.get("emotion") or "happy", "action": sc.get("action") or "idle",
                     "cast": on or [category["lead"]], "card": _card(sc.get("card")), **({"roles": roles} if roles else {})})
-    if seg["kind"] == "hello":            # the hook: 4 in 5 viewers left during long greetings, so it is enforced here
+    if seg["kind"] == "hello":            # the cold open: 4 in 5 viewers left during long greetings, so it is enforced here
         out = [sc for sc in out if not ROLL_CALL.search(sc["text"])][:HOOK_LINES]
     return out
 
 
-HOOK_LINES = 4
+HOOK_LINES = 3
 _NAMES = "|".join(c["name"].split()[0].lower() for c in cast.CAST.values())
-ROLL_CALL = re.compile(rf"\b(i'?m|i am|it'?s me,?)\s+({_NAMES})\b|^(hi|hello)[ ,!]+(friends?|everyone|little sprouts)\b"
+ROLL_CALL = re.compile(rf"\b(i'?m|i am|it'?s me,?)\s+({_NAMES})\b|^(hi|hello)[ ,!]+(hello[ ,!]+)?(friends?|everyone|little sprouts)\b"
                        r"|\bhow are you\b", re.I)
+
+
+SLOW_START = re.compile(r"\b(snuggle in|story ?time|today'?s story|pack your bags|are you ready|let'?s (find out|begin|start))\b", re.I)
+
+
+def chorus(script: dict) -> list[dict]:
+    """The episode song's chorus: its first sung line that comes back, with the line after it."""
+    for seg in script.get("segments") or []:
+        sung = [sc for sc in seg["scenes"] if sc.get("kind") == "sing"] if seg["kind"] == "song" else []
+        texts = [sc["text"] for sc in sung]
+        for i, sc in enumerate(sung):
+            if texts.count(sc["text"]) >= 2 and len(sc["text"].split()) <= 9:
+                nxt = sung[i + 1] if i + 1 < len(sung) else None
+                pair = nxt is not None and texts.count(nxt["text"]) >= 2 and nxt["text"] != sc["text"]
+                return [sc, nxt] if pair else [sc]
+    return []
+
+
+def cold_open(script: dict) -> dict:
+    """Finish the opening (after the last rewrite, safe to run twice): the child is asked something, two lines of the
+    song's chorus play right after, and the first story segment starts without 'snuggle in, it's story time'."""
+    segs = script.get("segments") or []
+    if not segs or segs[0]["kind"] != "hello":
+        return script
+    hook = [sc for sc in segs[0]["scenes"] if not sc.get("_tease")]
+    if hook and not any(sc.get("kind") == "question" for sc in hook):
+        key = next((str(k) for k in script.get("key_words") or [] if k), "")
+        hook.insert(1, {"speaker": cast.STAR, "text": f"Can you say {key} with me?" if key else "Can you help me?",
+                        "kind": "question", "emotion": "excited", "action": "point",
+                        "cast": (hook[0].get("cast") or [cast.STAR])[:3], "card": None})
+    tease = [{"speaker": c["speaker"], "text": c["text"], "kind": "sing", "emotion": "happy", "action": "dance",
+              "cast": (c.get("cast") or [c["speaker"]])[:3], "card": None, "_tease": True} for c in chorus(script)]
+    at = next((i + 1 for i, sc in enumerate(hook) if sc.get("kind") == "question"), len(hook))
+    segs[0]["scenes"] = hook[:at] + tease + hook[at:]
+    if len(segs) > 2 and segs[1]["kind"] != "song":
+        first = segs[1]["scenes"]
+        while len(first) > 3 and SLOW_START.search(first[0]["text"]):
+            first.pop(0)
+    return script
 
 
 def clean_characters(chars) -> list[dict]:
@@ -259,6 +306,13 @@ def _card(c) -> dict | None:
     return c
 
 
+def _minutes(seg: dict) -> float:
+    try:
+        return float(seg.get("minutes") or 1.5)
+    except (TypeError, ValueError):
+        return 1.5
+
+
 def write_episode(category_id: str, topic: str, band_id: str, minutes: float, lang: str = "en",
                   log=print, source: dict | None = None, hints: str = "") -> dict:
     cat = categories.get(category_id)
@@ -267,6 +321,9 @@ def write_episode(category_id: str, topic: str, band_id: str, minutes: float, la
            if isinstance(g, dict)]
     plan["characters"] = _from_library(clean_characters(raw))
     segments, tail = [], []
+    if len(plan["segments"]) > 2 and plan["segments"][0]["kind"] == "hello":
+        first = plan["segments"][1]                        # the segment viewers leave in: short, and straight into it
+        first.update(first=True, minutes=min(FIRST_MAX, _minutes(first)))
     for seg in plan["segments"]:
         scenes = write_segment(seg, plan, cat, band_id, tail, lang, source=source)
         if not scenes:
@@ -284,6 +341,7 @@ def write_episode(category_id: str, topic: str, band_id: str, minutes: float, la
 
 
 WRITE_WPM = 175        # words to ask for per minute: the voices speak ~190 wpm, plus breaths and answer pauses
+FIRST_MAX = 1.2        # minutes for the first segment after the cold open (viewers left 0:34 into 2-minute ones)
 FIXED_KINDS = ("hello", "goodbye", "song", "recap")   # these have a set length; the rest can grow
 
 
@@ -307,10 +365,11 @@ def _top_up(segments: list[dict], plan: dict, cat: dict, band_id: str, lang: str
         need = .95 * target - est
         if need <= 0:
             break
-        cands = sorted((i for i, s in enumerate(segments) if s["kind"] not in FIXED_KINDS), key=shortfall, reverse=True)
+        free = [i for i, s in enumerate(segments) if s["kind"] not in FIXED_KINDS
+                and not (i < len(outl) and outl[i].get("first"))]                # the first story segment stays short
+        cands = sorted(free, key=shortfall, reverse=True)
         if not cands or shortfall(cands[0]) < 20:
-            cands = sorted((i for i, s in enumerate(segments) if s["kind"] not in FIXED_KINDS),
-                           key=lambda i: -len(segments[i]["scenes"]))
+            cands = sorted(free, key=lambda i: -len(segments[i]["scenes"]))
         if not cands:
             break
         i = cands[0]

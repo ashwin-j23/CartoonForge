@@ -8,7 +8,7 @@ from __future__ import annotations
 
 # segment kinds understood by the writer + renderer
 SEGMENT_KINDS = {
-    "hello": "Opens in the action (no title card): a 10-15 s hook: tease of today's best moment + Sunny's catchphrase, then straight in",
+    "hello": "Cold open, ~10 s: something happens (the story's problem), Hoppy asks the child one thing, the song's chorus, go",
     "learn": "Teach one idea with on-screen cards, wonder question first, questions with pauses",
     "game": "Guessing / quiz game: question, pause, celebrate the answer (3-5 rounds)",
     "song": "Sing-along song: short lines, repeated chorus, the key words of the episode",

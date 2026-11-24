@@ -72,6 +72,7 @@ def chapters(timeline: list[dict]) -> str:
     return "\n".join(rows) if len(rows) >= 3 else ""
 
 
+AUDIENCE = "ages 3-5"   # one promise on every video (descriptions said 5-8 or 8-12 while titles said toddlers)
 TITLE_MAX = 50          # parents browse on phones: longer titles are cut off in the feed
 _AUDIENCE = re.compile(r"\s+for (toddlers|kids|preschoolers|children|babies)\s*$", re.I)
 _DANGLING = {"a", "an", "and", "the", "of", "for", "with", "to", "in", "on", "&", "|", "-", "–", ":"}
@@ -166,7 +167,7 @@ def build(script: dict, settings: dict, timeline: list[dict] | None = None) -> d
     if goals:
         parts += ["In this episode your child will:"] + [f"• {g}" for g in goals] + [""]
     parts += parts_src + [cast_line, "",
-              f"{name} makes calm, kind, curious videos for children {b['ages']}: songs, stories, counting, letters, "
+              f"{name} makes calm, kind, curious videos for children {AUDIENCE}: songs, stories, counting, letters, "
               "feelings and the whole wide world. Made with child-development principles: gentle pace, real pauses "
               "for your child to answer, movement breaks and a calm goodbye.",
               "", "For grown-ups: watch together when you can and ask your child what they learned!",

@@ -134,7 +134,7 @@ def estimate_audio(script: dict, fps: int) -> dict:
             scenes.append({"seg": si, "idx": ci, "speaker": sc["speaker"], "start": t, "voice_end": t + dur, "end": end,
                            "kind": sc.get("kind", "line"), "words": ws,
                            "reveal": audiomod._reveal_times(sc.get("card"), ws, t, dur),
-                           "sing": sc.get("kind") == "sing" and seg["kind"] == "song"})
+                           "sing": sc.get("kind") == "sing" and seg["kind"] in ("song", "hello")})
             t = end
         segs.append({"title": seg["title"], "kind": seg["kind"], "set": seg.get("set"), "start": s0, "end": t})
     mouth = np.array([.6 if int(i / 3) % 2 else .1 for i in range(int((t + 6) * fps) + 1)], np.float32)

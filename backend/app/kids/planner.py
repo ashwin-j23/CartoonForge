@@ -86,6 +86,11 @@ def weights() -> dict[str, float]:
     return w
 
 
+def _band(band_id: str, cat: dict) -> str:
+    """The channel's age band, or the category's nearest one when it has no episodes for that age."""
+    return band_id if band_id in cat["bands"] else cat["bands"][min(1, len(cat["bands"]) - 1)]
+
+
 def next_episode(band_id: str | None = None, category_id: str | None = None, topic: str | None = None,
                  publish_on: date | None = None) -> dict:
     s = app_settings()
@@ -102,15 +107,14 @@ def next_episode(band_id: str | None = None, category_id: str | None = None, top
             if tr:
                 trends.mark_used(tr["id"], "")
                 why = f"Trending ({tr['score']}): {tr.get('why', '')}"[:200]
-                return {"category": tr["category"], "topic": tr["topic"], "age_band": tr.get("age_band") or band_id,
+                return {"category": tr["category"], "topic": tr["topic"], "age_band": _band(band_id, categories.get(tr["category"])),   # one audience, not the trend's
                         "why": why, "angle": tr.get("angle", "")}
     if not category_id:
         pool = [c for c in categories.for_band(band_id)] or categories.CATEGORIES
         w = weights()
         category_id = random.choices([c["id"] for c in pool], [w.get(c["id"], 1.0) for c in pool])[0]
     cat = categories.get(category_id)
-    if band_id not in cat["bands"]:
-        band_id = cat["bands"][min(1, len(cat["bands"]) - 1)]
+    band_id = _band(band_id, cat)
     if not topic:
         fresh = [t for t in cat["topics"] if t.lower() not in used]
         topic = random.choice(fresh) if fresh else _new_topic(cat, band_id, used)

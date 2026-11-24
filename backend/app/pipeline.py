@@ -117,6 +117,7 @@ def write(eid: str) -> dict:
                                                       if script["segments"][i]["kind"] not in ("hello", "goodbye")}, lg)
             sim, twin = similarity_to_recent(script, eid)
         review["variety"] = {"overlap": round(sim, 3), "closest": twin}
+        writer.cold_open(script)
         _growth_line(script, s)
         try:
             from .kids import library

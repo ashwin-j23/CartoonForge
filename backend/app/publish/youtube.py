@@ -154,6 +154,8 @@ def update_video(video_id: str, refresh_token: str = "", title: str | None = Non
                                        "defaultAudioLanguage") if k in v["snippet"]}
     st = {k: v["status"][k] for k in ("privacyStatus", "selfDeclaredMadeForKids", "containsSyntheticMedia",
                                       "license", "embeddable", "publicStatsViewable") if k in v["status"]}
+    if v["status"].get("publishAt") and st.get("privacyStatus") == "private":
+        st["publishAt"] = v["status"]["publishAt"]          # an edit must keep the schedule: leaving it out cancels it
     if title is not None:
         sn["title"] = title.strip()[:100]
     if description is not None:
@@ -162,6 +164,7 @@ def update_video(video_id: str, refresh_token: str = "", title: str | None = Non
         sn["tags"] = [t for t in tags if len(t) <= 40][:15]
     if privacy in ("public", "unlisted", "private"):
         st["privacyStatus"] = privacy
+        st.pop("publishAt", None)                # an explicit privacy choice replaces the schedule
     if made_for_kids is not None:
         st["selfDeclaredMadeForKids"] = bool(made_for_kids)
     if publish_at:                               # schedule: YouTube makes a private video public at this time

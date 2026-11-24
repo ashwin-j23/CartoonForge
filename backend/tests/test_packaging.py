@@ -61,19 +61,18 @@ def test_about_a_short_a_day_never_a_repeat_clip():
     assert cuts[0] == (100, 158, True) and cuts[1] == (20, 60, False) and len(cuts) == 2   # starts on the beat
 
 
-def test_hook_is_four_lines_with_no_roll_call():
+def test_cold_open_is_three_lines_with_no_roll_call():
     from app.kids import writer
     cat = {"lead": "hoppy"}
     raw = [{"speaker": "hoppy", "text": "Look, a dinosaur bone! Can you find it?"},
-           {"speaker": "sunny", "text": "Hello, little sprouts!"},
+           {"speaker": "sunny", "text": "Hello, hello, little sprouts!"},
            {"speaker": "pip", "text": "Hi! I'm Pip!"},
            {"speaker": "mimi", "text": "And I'm Mimi!"},
            {"speaker": "sunny", "text": "Let's dig it up together!"},
            {"speaker": "bo", "text": "Dig, dig, dig!"},
            {"speaker": "hoppy", "text": "What will we find?"}]
     out = [sc["text"] for sc in writer.clean_scenes(raw, {"kind": "hello"}, cat)]
-    assert out == ["Look, a dinosaur bone! Can you find it?", "Let's dig it up together!", "Dig, dig, dig!",
-                   "What will we find?"]
+    assert out == ["Look, a dinosaur bone! Can you find it?", "Let's dig it up together!", "Dig, dig, dig!"]
 
 
 def test_long_opening_is_cut_before_upload(tmp_path):

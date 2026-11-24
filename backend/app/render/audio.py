@@ -76,6 +76,7 @@ def _reveal_times(card: dict | None, words: list[dict], start: float, dur: float
     return [start + i * dur / n for i in range(n)]
 
 
+OPEN_PAUSE = 2.0       # seconds the cold open waits for the child's answer (the band's pause is used everywhere else)
 VOICE_CHAIN = ("highpass=f=75,lowpass=f=14000,"
                "equalizer=f=250:t=q:w=1.2:g=-2.5,"           # less boxy
                "equalizer=f=3200:t=q:w=1.4:g=2.5,"           # presence: clear consonants for little ears
@@ -162,7 +163,7 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
             seg["kind"], mood)
         voice_mood = "bedtime" if mood == "bedtime" or seg["kind"] == "calm" else (
             "story" if seg["kind"] == "story" else "excited" if seg["kind"] == "movement" else "playful")
-        song_start = None
+        song_start = tease_start = tease_end = None
         bar = music.bar_seconds("bedtime" if mood == "bedtime" else ("excited" if mood == "excited" else "playful"), tempo)
         for ci, sc in enumerate(seg["scenes"]):
             sing = sc.get("kind") == "sing" and seg["kind"] == "song"
@@ -172,14 +173,21 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
             if sing:
                 k = math.ceil((t - song_start) / bar - 1e-6)
                 t = song_start + k * bar + 0.05
+            tease = sc.get("kind") == "sing" and seg["kind"] == "hello"      # the chorus, 3-4 s, inside the cold open
+            if tease:
+                tease_start = t if tease_start is None else tease_start
+                t = tease_start + math.ceil((t - tease_start) / (bar / 2) - 1e-6) * bar / 2
             if sc.get("kind") == "answer":
                 sfx.add(music.sfx("chime"), t - 0.15, 0.7)
-            dur, ws = speak(sc, t, "playful" if sing else voice_mood)
+            dur, ws = speak(sc, t, "playful" if sing or tease else voice_mood)
             hold = t + dur
             if sc.get("kind") == "question":
-                for k in range(int(b["pause"])):
+                pause = min(OPEN_PAUSE, b["pause"]) if seg["kind"] == "hello" else b["pause"]
+                for k in range(int(pause)):
                     sfx.add(music.sfx("tick"), hold + 0.5 + k, 0.8)
-                hold += b["pause"]
+                hold += pause
+            elif tease:
+                hold += 0.1
             elif not sing:
                 hold += 0.32 + (0.15 if sc["text"].rstrip().endswith(("!", "?", ".")) else 0.0)
                 if voice_mood in ("bedtime", "story"):
@@ -189,8 +197,10 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
                 sfx.add(music.sfx("pop", int(r * 100)), r, 0.6)
             scenes_tl.append({"seg": si, "idx": ci, "speaker": sc["speaker"], "start": round(t, 3),
                               "voice_end": round(t + dur, 3), "end": round(hold, 3), "kind": sc.get("kind", "line"),
-                              "words": ws, "reveal": [round(r, 3) for r in reveal], "sing": sing})
+                              "words": ws, "reveal": [round(r, 3) for r in reveal], "sing": sing or tease})
             t = hold
+            if tease:
+                tease_end = t
         if song_start is not None:
             end_bar = math.ceil((t - song_start) / bar) + 1
             regions.append({"start": seg_start, "end": song_start, "kind": "bed", "mood": seg_mood})
@@ -198,6 +208,11 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
                             "mood": mood})
             t = max(t, song_start + end_bar * bar)
             sfx.add(music.sfx("yay"), t - 0.6, 0.5)
+        elif tease_start is not None:
+            regions += [{"start": seg_start, "end": tease_start, "kind": "bed", "mood": seg_mood, "seg": seg["kind"]},
+                        {"start": tease_start, "end": tease_end, "kind": "tease", "mood": mood,
+                         "bars": math.ceil((tease_end - tease_start) / bar) + 1},
+                        {"start": tease_end, "end": t, "kind": "bed", "mood": seg_mood, "seg": seg["kind"]}]
         else:
             regions.append({"start": seg_start, "end": t, "kind": "bed", "mood": seg_mood, "seg": seg["kind"]})
         segs_tl.append({"title": seg["title"], "kind": seg["kind"], "set": seg.get("set"), "start": round(seg_start, 3),
@@ -231,8 +246,11 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
         dur = r["end"] - r["start"]
         if dur <= 0.3 or r["kind"] in ("theme", "outro") or not level:
             continue
-        if r["kind"] == "song":
-            put(music.song_bed(r["mood"], seed, r["bars"], tempo), r["start"], min(0.6, level * 3.2), 0.05)
+        if r["kind"] in ("song", "tease"):
+            x = music.song_bed(r["mood"], seed, r["bars"], tempo)
+            if r["kind"] == "tease":                       # the same tune as the episode's song, cut to the chorus
+                x = x[: int(dur * SR)]
+            put(x, r["start"], min(0.6, level * 3.2), 0.05 if r["kind"] == "song" else 0.15)
         else:
             g = level * (1.5 if r.get("seg") == "movement" else 0.6 if r["mood"] in ("calm", "bedtime") else 1.0)
             put(music.bed(r["mood"], seed + str(int(r["start"])), dur + 0.4, tempo if r["mood"] not in ("calm", "bedtime") else 1.0),
@@ -250,7 +268,7 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
     env = np.convolve(env, np.ones(k) / k, mode="same")
     duck = 1 - 0.55 * np.clip(env / 0.04, 0, 1)
     for r in regions:                               # songs and jingles are not ducked
-        if r["kind"] in ("song", "theme", "outro"):
+        if r["kind"] in ("song", "tease", "theme", "outro"):
             i0, i1 = int(r["start"] * SR), int(r["end"] * SR)
             duck[i0:i1] = np.maximum(duck[i0:i1], 0.8)
     s = sfx.buf[:n]
