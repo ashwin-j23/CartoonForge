@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from functools import lru_cache
 
 from PIL import Image, ImageDraw
@@ -57,12 +58,14 @@ SPECIES = {
     "owl": ((160, 120, 90), (235, 215, 185), "tufts", "beak", "none", ["wings"]),
     "bird": ((90, 170, 240), (230, 240, 255), "none", "beak", "none", ["wings"]),
     "crow": ((70, 70, 95), (120, 120, 150), "none", "beak", "none", ["wings"]),
+    "eagle": ((135, 92, 60), (252, 246, 236), "none", "beak", "none", ["wings"]),
     "duck": ((255, 220, 70), (255, 245, 190), "none", "duck_bill", "none", ["wings"]),
     "hen": ((240, 230, 215), (255, 250, 240), "none", "beak", "none", ["wings", "comb"]),
     "rooster": ((220, 120, 60), (250, 220, 160), "none", "beak", "none", ["wings", "comb"]),
     "peacock": ((60, 140, 200), (120, 200, 190), "none", "beak", "none", ["wings", "comb"]),
     "ant": ((180, 70, 60), (220, 120, 100), "antennae", "flat", "none", []),
     "grasshopper": ((140, 210, 90), (210, 240, 160), "antennae", "flat", "none", ["wings"]),
+    "spider": ((120, 95, 150), (215, 195, 235), "none", "flat", "none", []),
     "bee": ((255, 210, 60), (255, 235, 150), "antennae", "flat", "none", ["stripes", "wings"]),
     "butterfly": ((200, 140, 230), (240, 210, 250), "antennae", "flat", "none", ["wings"]),
     "fish": ((255, 150, 70), (255, 220, 180), "none", "flat", "fish", ["fins"]),
@@ -77,6 +80,18 @@ SPECIES = {
     "kangaroo": ((200, 140, 90), (240, 210, 175), "long", "muzzle", "thick", []),
     "camel": ((215, 175, 120), (240, 215, 175), "round", "muzzle", "thin", []),
 }
+# Story animals without a drawing of their own -> the nearest one (an unknown animal used to become a bear).
+ALIASES = {"hawk": "eagle", "falcon": "eagle", "vulture": "eagle", "kite": "eagle", "jackdaw": "crow", "raven": "crow",
+           "magpie": "crow", "parrot": "bird", "sparrow": "bird", "robin": "bird", "dove": "bird", "pigeon": "bird",
+           "swallow": "bird", "nightingale": "bird", "stork": "bird", "crane": "bird", "heron": "bird", "goose": "duck",
+           "swan": "duck", "chicken": "hen", "chick": "hen", "turkey": "rooster", "cock": "rooster", "ram": "sheep",
+           "lamb": "sheep", "ox": "cow", "bull": "cow", "calf": "cow", "buffalo": "cow", "pony": "horse", "mule": "donkey",
+           "rat": "mouse", "hamster": "mouse", "hedgehog": "mouse", "mole": "mouse", "beaver": "squirrel", "chipmunk": "squirrel",
+           "otter": "squirrel", "raccoon": "fox", "jackal": "wolf", "hyena": "wolf", "coyote": "wolf", "puppy": "dog",
+           "kitten": "cat", "leopard": "tiger", "cheetah": "tiger", "jaguar": "tiger", "panther": "tiger", "ape": "monkey",
+           "gorilla": "monkey", "reindeer": "deer", "stag": "deer", "toad": "frog", "lizard": "crocodile", "alligator": "crocodile",
+           "serpent": "snake", "cricket": "grasshopper", "beetle": "ant", "ladybug": "bee", "dolphin": "whale", "shark": "fish",
+           "koala": "bear"}
 HUMAN_WORDS = ("human", "person", "boy", "girl", "man", "woman", "king", "queen", "prince", "princess", "child",
                "farmer", "giant", "old", "grandma", "grandpa", "mother", "father", "baker", "sailor", "wizard",
                "witch", "fairy", "hero", "knight", "merchant", "fisherman", "teacher", "monk", "chief", "emperor")
@@ -125,6 +140,7 @@ LOOK = {
     "owl": dict(plan="bird", tufts=True, disc=True),
     "bird": dict(plan="bird", crest="songbird"),
     "crow": dict(plan="bird", crest="crow", beak_col=(70, 70, 80)),
+    "eagle": dict(plan="bird", mask=True, crest="crow", beak_col=(255, 190, 40)),
     "duck": dict(plan="bird", bill=True, crest="duck"),
     "hen": dict(plan="bird", comb="small", tail_feathers="hen"),
     "rooster": dict(plan="bird", comb="big", tail_feathers="rooster"),
@@ -134,6 +150,7 @@ LOOK = {
     "bee": dict(plan="bug", bug="bee"),
     "butterfly": dict(plan="bug", bug="butterfly"),
     "grasshopper": dict(plan="bug", bug="grasshopper"),
+    "spider": dict(plan="bug", bug="spider", ears="none"),
     "fish": dict(plan="fish"),
     "whale": dict(plan="fish", whale=True),
 }
@@ -149,7 +166,9 @@ def normalize(spec: dict) -> dict:
         kind = "human" if any(w in words for w in HUMAN_WORDS) and not any(k in words for k in SPECIES) else "animal"
     sp["kind"] = kind
     if kind == "animal":
-        key = next((k for k in SPECIES if k in species), None) or next((k for k in SPECIES if k in words), "bear")
+        named = re.findall(r"[a-z]+", species) + re.findall(r"[a-z]+", words)
+        key = next((w if w in SPECIES else ALIASES[w] for w in named if w in SPECIES or w in ALIASES), None) or \
+            next((k for k in SPECIES if k in species), None) or next((k for k in SPECIES if k in words), "bear")
         main, belly, ears, face, tail, extras = SPECIES[key]
         sp.setdefault("species", key)
         sp["_key"] = key
@@ -158,6 +177,8 @@ def normalize(spec: dict) -> dict:
         sp.setdefault("ears", ears)
         sp.setdefault("face", face)
         sp.setdefault("tail", tail)
+        if sp.get("outfit") == "feathers":       # writers mean the bird's own feathers, not a headdress
+            sp["outfit"] = "none"
         sp["extras"] = list(dict.fromkeys(list(sp.get("extras") or []) + extras))
     else:
         sp["skin_rgb"] = _col(sp.get("skin")) or SKINS.get(str(sp.get("skin", "")).lower(), SKINS["tan"])
@@ -839,6 +860,11 @@ def _bug(k, sp, mouth_, eyes, emo, arms):
         for sx in (-1, 1):                      # big bent hind legs
             p = [(sx * 10, 80), (sx * 22, 66), (sx * 19, 95)]
             k.part(k.tube(_bez(p, 12), [3.6, 3.0, 1.6]), m, shade=(.25, .35))
+    if bug == "spider":                         # three long bent legs a side (with the arms: eight limbs)
+        for sx in (-1, 1):
+            for x, y, kx, ky in ((30, 92, 27, 60), (38, 84, 32, 52), (40, 70, 33, 43)):
+                k.part(k.tube(_bez([(sx * 8, 74), (sx * kx, ky), (sx * x, y)], 14), [2.4, 2.1, 1.5]), limb, shade=(.2, .3))
+                k.part(k.E(sx * x, y + .5, 2.6, 2.0), limb, shade=(.2, .3))
     for sx in (-1, 1):
         k.part(k.tube([(sx * 6, 86), (sx * 7, 93)], [1.6, 1.5]), limb)
         k.part(k.egg(sx * 8, 95.3, 5.6, 3.4, top=1.05), limb, shade=(.25, .35))
@@ -847,7 +873,7 @@ def _bug(k, sp, mouth_, eyes, emo, arms):
         bsh = k.egg(0, 68, 10, 9.5, top=.9)
         k.part(bsh, m, shade=(.3, .45))
     else:
-        bw, bh = (16, 18) if bug == "bee" else (11, 16)
+        bw, bh = (16, 18) if bug == "bee" else (17, 16) if bug == "spider" else (11, 16)
         bsh = k.egg(0, 74, bw, bh, top=.8)
         k.part(bsh, m)
         if bug == "bee":

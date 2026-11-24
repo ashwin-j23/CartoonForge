@@ -202,20 +202,24 @@ def localize(meta: dict, langs: list[str]) -> dict:
     return out
 
 
-def translate_script(script: dict, lang: str) -> dict:
-    """A dubbed edition: same scenes/cards/timing structure, text in `lang`. Song lines stay short and rhythmic."""
+def translate_script(script: dict, lang: str, seconds: list[list[float]] | None = None) -> dict:
+    """A dubbed edition: same scenes/cards/timing structure, text in `lang`. Song lines stay short and rhythmic.
+    seconds: how long each original line lasts on screen (per segment); the translation must be sayable in that time."""
     import copy
     out = copy.deepcopy(script)
     out["language"] = lang
-    for seg in out["segments"]:
+    for si, seg in enumerate(out["segments"]):
         lines = [sc["text"] for sc in seg["scenes"]]
+        fit = ("The picture already exists: each line MUST be sayable, unhurried, in its time. SECONDS per line: "
+               f"{seconds[si]}. Say the same thing shorter when the language needs more words. Keep the characters' names. "
+               "Write numbers as words.\n") if seconds else ""
         cards = [(i, sc["card"]) for i, sc in enumerate(seg["scenes"]) if sc.get("card")]
         data, _ = complete_json(
             "You translate children's TV scripts for dubbing. Keep it simple, warm and natural for a "
             f"{psychology.band(script['age_band'])['ages']}-year-old native speaker; songs must rhyme and keep "
             "short lines. Keep the same number of lines. JSON only.",
             f"Language: {languages.name(lang)}.\nSegment kind: {seg['kind']}. Segment title: {seg['title']}\nLINES: {lines}\n"
-            f"CARD TEXTS: {[{**c, 'i': i} for i, c in cards]}\n"
+            f"CARD TEXTS: {[{**c, 'i': i} for i, c in cards]}\n{fit}"
             "Return {\"title\": str, \"lines\": [same count], \"cards\": [{\"i\": int, \"text\": str, \"word\": str}]}",
             temperature=0.3, max_tokens=4000)
         new = data.get("lines") or []

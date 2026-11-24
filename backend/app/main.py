@@ -397,10 +397,9 @@ def edition(eid: str, body: dict):
     if lang not in languages.LANGS:
         raise HTTPException(400, "Unknown language")
     try:
-        ed = pipeline.make_edition(eid, lang)
+        pipeline.make_edition(eid, lang)
     except ValueError as ex:
         raise HTTPException(400, str(ex)) from None
-    run(pipeline.process, ed["id"])
     return _full(_get(eid))
 
 
@@ -1150,9 +1149,10 @@ def cron_tick(request: Request):
 
 
 # ---------------------------------------------------------------- YouTube OAuth
-def _oauth_state() -> str:
-    """Signed, self-contained OAuth state: works when the callback lands on another serverless instance."""
-    body = f"{int(time.time())}.{secrets.token_urlsafe(12)}"
+def _oauth_state(which: str = "main") -> str:
+    """Signed, self-contained OAuth state: works when the callback lands on another serverless instance.
+    which: the channel being connected (main = English, dub = the dubbed editions)."""
+    body = f"{int(time.time())}.{secrets.token_urlsafe(12)}{'' if which == 'main' else '~' + which}"
     sig = hmac.new(config.SECRET_KEY.encode(), body.encode(), "sha256").hexdigest()[:32]
     return f"{body}.{sig}"
 
@@ -1172,24 +1172,60 @@ def _redirect_uri(request: Request) -> str:
 
 
 @app.get("/api/youtube/connect", dependencies=[Depends(auth)])
-def yt_connect(request: Request):
+def yt_connect(request: Request, channel: str = "main"):
     from .publish import youtube
     from .settings import secret
     if not (secret("YT_CLIENT_ID") and secret("YT_CLIENT_SECRET")):
         raise HTTPException(400, "Add YT_CLIENT_ID and YT_CLIENT_SECRET in Settings → Keys first")
-    return {"url": youtube.auth_url(_redirect_uri(request), _oauth_state())}
+    if channel not in ("main", "dub"):
+        raise HTTPException(400, "Unknown channel")
+    if channel == "dub" and not secret("YT_REFRESH_TOKEN"):
+        raise HTTPException(400, "Connect the main (English) channel first")
+    return {"url": youtube.auth_url(_redirect_uri(request), _oauth_state(channel), pick=channel == "dub")}
+
+
+@app.get("/api/dubs", dependencies=[Depends(auth)])
+def dub_status():
+    from . import dubs
+    return dubs.status()
+
+
+@app.delete("/api/dubs/channel", dependencies=[Depends(auth)])
+def dub_disconnect():
+    """Forget the dubbed channel's sign-in (its videos stay on YouTube)."""
+    from .settings import save_secrets
+    save_secrets({"YT_DUB_REFRESH_TOKEN": ""})
+    get_db().set_setting("dub_channel_cache", None)
+    return {"ok": True}
 
 
 @app.get("/api/youtube/callback")
 def yt_callback(request: Request, code: str = "", state: str = "", error: str = ""):
     from .publish import youtube
+    from .settings import save_secrets, secret
     if error or not code or not _state_ok(state):
         return RedirectResponse(f"/#/channel?yt=error&error={error or 'expired - press Connect again'}")
     try:
-        youtube.exchange_code(code, _redirect_uri(request))
-        get_db().set_setting("channel_cache", None)
+        dub = state.split(".")[1].endswith("~dub")
+        tok = youtube.exchange_code(code, _redirect_uri(request), save=False)
+        info = youtube.channel_info(tok)
+        if not info.get("id"):
+            raise RuntimeError("That Google account has no YouTube channel")
+        other = "YT_REFRESH_TOKEN" if dub else "YT_DUB_REFRESH_TOKEN"
+        try:
+            taken = youtube.channel_info(secret(other)).get("id") if secret(other) else None
+        except Exception:  # noqa: BLE001  (the other sign-in expired: it can't block this one)
+            taken = None
+        if taken == info["id"]:
+            raise RuntimeError("That is the English channel - choose the other channel on the Google screen" if dub
+                               else "That is the dubbed channel - choose Hoppy Hop Hop on the Google screen")
+        save_secrets({"YT_DUB_REFRESH_TOKEN" if dub else "YT_REFRESH_TOKEN": tok})
+        get_db().set_setting("dub_channel_cache" if dub else "channel_cache", None)
+        if dub:
+            return RedirectResponse("/#/channel?yt=dub")
     except Exception as e:  # noqa: BLE001
-        return RedirectResponse(f"/#/channel?yt=error&error={str(e)[:80]}")
+        from urllib.parse import quote
+        return RedirectResponse(f"/#/channel?yt=error&error={quote(str(e)[:120])}")
     return RedirectResponse("/#/channel?yt=ok")
 
 

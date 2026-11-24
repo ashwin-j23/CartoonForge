@@ -216,14 +216,6 @@ def render(eid: str) -> dict:
             except Exception as e:  # noqa: BLE001
                 log(f"Old render not removed (the daily cleanup will retry): {e}", "warn", eid)
         log(f"Rendered {out['duration'] / 60:.1f} min ({'all checks passed' if qa['ok'] else 'QA issues'})", ep=eid)
-        if not ep.get("edition_of") and has_ai():
-            for lang in s.get("editions") or []:
-                if lang != ep.get("language", "en") and lang not in (ep.get("editions") or {}):
-                    try:
-                        make_edition(eid, lang)
-                    except Exception as e:  # noqa: BLE001
-                        log(f"{lang} edition not queued: {e}", "warn", eid)
-            ep = db.get("episodes", eid)
         if s.get("autopilot") or s.get("full_auto"):
             from . import automation
             why = automation.gates(ep, s)
@@ -419,7 +411,9 @@ def publish(eid: str, force: bool = False) -> dict:
         if thumb:
             thumb = thumb.rename(thumb.with_suffix(".jpg"))
         lang = ep.get("language", "en")
-        rt = (s.get("edition_channels") or {}).get(lang, "") if lang != s.get("language", "en") else ""
+        if lang != s.get("language", "en") or ep.get("edition_of"):
+            raise RuntimeError("The main channel is English only: dubs go to the dubbed channel (Channel page)")
+        rt = ""
         from .kids import feedback
         privacy, when = s.get("youtube_privacy", "public"), None
         slot = _parse(ep.get("publish_at"))
@@ -661,25 +655,22 @@ def make_compilation(minutes: int | None = None) -> dict:
 
 
 def make_edition(eid: str, lang: str) -> dict:
-    """A full dubbed copy: translate → native voices → render → its own episode row (kind 'episode', language lang)."""
-    db = get_db()
-    p = db.get("episodes", eid)
-    if not p or not p.get("script"):
+    """Queue a dub: the worker puts new voices on the episode's own picture and uploads it to the dubbed channel."""
+    from . import dubs
+    ep = get_db().get("episodes", eid)
+    if not ep or not ep.get("script"):
         raise ValueError("Episode has no script")
     if not has_ai():
         raise ValueError("Dubbed editions need an AI key (translation)")
-    script = metamod.translate_script(p["script"], lang)
-    ed = db.insert("episodes", {
-        "kind": "episode", "edition_of": eid, "status": "scripted", "category": p["category"], "topic": p["topic"],
-        "age_band": p["age_band"], "language": lang, "minutes": p.get("minutes", 12), "script": script,
-        "critic": p.get("critic"), "safety": safety.check_episode({"script": script, "meta": {}}), "editions": {},
-        "meta": {**(p.get("meta") or {}), **((p.get("meta") or {}).get("localizations", {}).get(lang) or {}), "localizations": {}},
-        "why": f"Dubbed edition of {eid}"})
-    eds = dict(p.get("editions") or {})
-    eds[lang] = {"id": ed["id"], "status": "scripted"}
-    db.update("episodes", eid, {"editions": eds})
-    log(f"Dubbed {lang} edition queued", ep=ed["id"])
-    return ed
+    if not dubs.token():
+        raise ValueError("Connect the dubbed channel first (Channel page)")
+    if ep.get("archived") or not ep.get("video_url"):
+        raise ValueError("Only the small preview of this episode is left; render it again to dub it")
+    if ((ep.get("editions") or {}).get(lang) or {}).get("status") == "published":
+        raise ValueError("Already on the dubbed channel")
+    dubs._save(eid, lang, {"status": "planned", "tries": 0, "error": None})
+    log(f"{lang} dub queued", ep=eid)
+    return get_db().get("episodes", eid)
 
 
 # ---------------------------------------------------------------- analytics
@@ -859,6 +850,11 @@ def tick(render_work: bool = True, budget_s: int = 2700) -> dict:
             out["approved"] = automation.auto_approve()
             out["auto_review"] = automation.auto_review()
             out["published"] += publish_due()
+            try:                                   # the dubbed channel: new voices on finished pictures
+                from . import dubs
+                out["dubs"] = dubs.run(max(600, min(4000, budget_s - (time.time() - t0))))
+            except Exception as e:  # noqa: BLE001
+                out["dubs"] = f"skipped: {str(e)[:120]}"
         db = get_db()
         day = datetime.now(timezone.utc).date().isoformat()
         if db.get_setting("analytics_day") != day:
@@ -890,6 +886,8 @@ def tick(render_work: bool = True, budget_s: int = 2700) -> dict:
                 fixed = youtube.enforce_made_for_kids(skip=shorts - {None})
                 if fixed:
                     log(f"Made for kids was off on {len(fixed)} video(s) on YouTube; switched back on: {', '.join(fixed)}", level="warn")
+                if secret("YT_DUB_REFRESH_TOKEN"):
+                    fixed += youtube.enforce_made_for_kids(secret("YT_DUB_REFRESH_TOKEN"))
                 out["made_for_kids"] = fixed
             except Exception as e:  # noqa: BLE001
                 out["made_for_kids"] = f"skipped: {str(e)[:120]}"

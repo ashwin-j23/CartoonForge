@@ -76,6 +76,19 @@ def _reveal_times(card: dict | None, words: list[dict], start: float, dur: float
     return [start + i * dur / n for i in range(n)]
 
 
+DUB_MAX_TEMPO = 1.4    # a dubbed line longer than the original's time is sped up at most this much
+
+
+def _tempo(a: np.ndarray, k: float) -> np.ndarray:
+    """Faster speech at the same pitch (ffmpeg atempo); the audio is returned unchanged if ffmpeg fails."""
+    import subprocess
+    from .. import config
+    r = subprocess.run([config.FFMPEG, "-v", "error", "-f", "f32le", "-ar", str(SR), "-ac", "1", "-i", "-", "-af",
+                        f"atempo={k:.3f}", "-f", "f32le", "-ar", str(SR), "-ac", "1", "-"],
+                       input=a.astype(np.float32).tobytes(), capture_output=True, timeout=60)
+    return np.frombuffer(r.stdout, np.float32).copy() if r.returncode == 0 and r.stdout else a
+
+
 OPEN_PAUSE = 2.0       # seconds the cold open waits for the child's answer (the band's pause is used everywhere else)
 VOICE_CHAIN = ("highpass=f=75,lowpass=f=14000,"
                "equalizer=f=250:t=q:w=1.2:g=-2.5,"           # less boxy
@@ -138,7 +151,11 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
 
     guests = {g["id"]: g for g in script.get("characters") or [] if g.get("id")}
 
-    def speak(sc: dict, at: float, voice_mood: str) -> tuple[float, list[dict]]:
+    # Dubbing (dubs.py): the picture already exists, so every line starts where the original started and is fitted
+    # into the original's time: {"segs": [start...], "lines": [[[start, voice_end, hold_end], ...] per segment]}
+    dub = settings.get("_dub")
+
+    def speak(sc: dict, at: float, voice_mood: str, room: float | None = None) -> tuple[float, list[dict]]:
         vid = cast.voice_for(sc["speaker"], overrides, lang, guests)
         a, words, eng = tts.synth(sc["text"], vid, rate, voice_mood)
         engines.add(eng)
@@ -146,18 +163,26 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
         if sc["speaker"] in guests and sc["speaker"] not in cast.CAST:
             p = cast.guest_profile(guests[sc["speaker"]])[1]
         else:
-            p = PITCH.get(sc["speaker"], 1.0) if lang == "en" else 1.0
-        a = _fade(_pitch(a, p))
+            p = PITCH.get(sc["speaker"], 1.0) if lang == "en" or dub else 1.0
+        a = _pitch(a, p)
+        if room and len(a) / SR > room:
+            k = min(DUB_MAX_TEMPO, len(a) / SR / room)
+            a, p = _tempo(a, k), p * k
+            if len(a) / SR > room + .25:
+                tight.append(sc["text"][:60])
+        a = _fade(a)
         dur = len(a) / SR
         voice.add(a, at)
         ws = [{"w": w["w"], "s": round(at + max(0, (w["s"] - off) / p), 3), "e": round(at + min(dur, (w["e"] - off) / p), 3)}
               for w in words]
         return dur, ws
 
+    tight: list[str] = []
     for si, seg in enumerate(script["segments"]):
         if si > 0:
             sfx.add(music.sfx("whoosh", si), t, 0.8)
-            t += GAP_SEG
+            t = dub["segs"][si] if dub else t + GAP_SEG
+        line_times: list[list[float]] = []
         seg_start = t
         seg_mood = {"song": mood, "calm": "calm", "movement": "excited", "goodbye": "calm" if mood != "bedtime" else "bedtime"}.get(
             seg["kind"], mood)
@@ -179,7 +204,16 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
                 t = tease_start + math.ceil((t - tease_start) / (bar / 2) - 1e-6) * bar / 2
             if sc.get("kind") == "answer":
                 sfx.add(music.sfx("chime"), t - 0.15, 0.7)
-            dur, ws = speak(sc, t, "playful" if sing or tease else voice_mood)
+            vm = "playful" if sing or tease else voice_mood
+            if dub:
+                row = dub["lines"][si][ci]
+                t, vend, hold0 = row[:3]
+                nxt = dub["lines"][si][ci + 1][0] if ci + 1 < len(dub["lines"][si]) else hold0
+                room = max(hold0, nxt) - t - .05 if sc.get("kind") != "question" else (vend - t) + .4 * (hold0 - vend)
+                _, ws = speak(sc, t, vm, room)
+                dur = vend - t
+            else:
+                dur, ws = speak(sc, t, vm)
             hold = t + dur
             if sc.get("kind") == "question":
                 pause = min(OPEN_PAUSE, b["pause"]) if seg["kind"] == "hello" else b["pause"]
@@ -192,7 +226,10 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
                 hold += 0.32 + (0.15 if sc["text"].rstrip().endswith(("!", "?", ".")) else 0.0)
                 if voice_mood in ("bedtime", "story"):
                     hold += 0.2
-            reveal = _reveal_times(sc.get("card"), ws, t, dur)
+            if dub:
+                hold = hold0
+            reveal = row[3] if dub and len(row) > 3 else _reveal_times(sc.get("card"), ws, t, dur)
+            line_times.append([round(t, 3), round(t + dur, 3), round(hold, 3), [round(r, 3) for r in reveal]])
             for r in reveal:
                 sfx.add(music.sfx("pop", int(r * 100)), r, 0.6)
             scenes_tl.append({"seg": si, "idx": ci, "speaker": sc["speaker"], "start": round(t, 3),
@@ -216,7 +253,7 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
         else:
             regions.append({"start": seg_start, "end": t, "kind": "bed", "mood": seg_mood, "seg": seg["kind"]})
         segs_tl.append({"title": seg["title"], "kind": seg["kind"], "set": seg.get("set"), "start": round(seg_start, 3),
-                        "end": round(t, 3)})
+                        "end": round(t, 3), "lines": line_times})        # lines: what a dub is fitted into
         log(f"Voiced segment {si + 1}/{len(script['segments'])} '{seg['title']}' → {t / 60:.1f} min")
 
     outro = music.theme(channel, slow=True)
@@ -295,7 +332,7 @@ def build(script: dict, settings: dict, out_wav: Path, fps: int, log=print) -> d
             mouth[f] = float(np.sqrt(np.mean(seg_ ** 2)))
     ref = float(np.percentile(mouth[mouth > 0.003], 90)) if np.any(mouth > 0.003) else 1.0
     mouth = np.clip(mouth / (ref or 1), 0, 1)
-    return {"wav": str(out_wav), "duration": total, "scenes": scenes_tl, "segments": segs_tl, "mouth": mouth,
+    return {"tight": tight, "wav": str(out_wav), "duration": total, "scenes": scenes_tl, "segments": segs_tl, "mouth": mouth,
             "jingle": jingle_len, "outro_start": regions[-1]["start"], "engines": sorted(engines),
             "song_regions": [{**r, "beat": music.bar_seconds("excited" if mood == "excited" else "playful", tempo) / 4}
                              for r in regions if r["kind"] == "song"]}

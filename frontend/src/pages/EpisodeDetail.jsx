@@ -492,7 +492,7 @@ function EditionModal({ open, ep, langs, onClose, onSubmit, busy }) {
   return (
     <Modal open={open} title="Add a dubbed edition" icon="globe" onClose={onClose}
       actions={<><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy || !lang} onClick={() => onSubmit(lang)}>{busy ? <Spinner /> : null}Queue edition</button></>}>
-      <p className="muted">The script is translated, re-voiced and rendered as a separate video for that language’s audience.</p>
+      <p className="muted">The voices are dubbed on this episode’s picture and uploaded to the dubbed channel. Nothing is drawn again.</p>
       <Field label="Language">
         <select value={lang} onChange={(e) => setLang(e.target.value)}>
           {options.map((l) => <option key={l.code} value={l.code}>{l.name}{l.native && l.native !== l.name ? ` — ${l.native}` : ''}</option>)}

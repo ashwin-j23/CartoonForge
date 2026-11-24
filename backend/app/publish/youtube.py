@@ -17,10 +17,10 @@ SCOPES = ("https://www.googleapis.com/auth/youtube.upload https://www.googleapis
           "https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly")
 
 
-def auth_url(redirect_uri: str, state: str) -> str:
+def auth_url(redirect_uri: str, state: str, pick: bool = False) -> str:
     return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
         "client_id": secret("YT_CLIENT_ID"), "redirect_uri": redirect_uri, "response_type": "code",
-        "scope": SCOPES, "access_type": "offline", "prompt": "consent", "state": state})
+        "scope": SCOPES, "access_type": "offline", "prompt": "select_account consent" if pick else "consent", "state": state})
 
 
 def exchange_code(code: str, redirect_uri: str, save: bool = True) -> str:

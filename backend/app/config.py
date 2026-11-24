@@ -165,6 +165,7 @@ SECRET_KEYS = [
     "GEMINI_API_KEY", "GROQ_API_KEY", "NVIDIA_API_KEY", "OPENROUTER_API_KEY", "CEREBRAS_API_KEY",
     "MISTRAL_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY",
     "YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN",
+    "YT_DUB_REFRESH_TOKEN",                # the second channel: dubbed editions in other languages (Channel page)
     "FAL_KEY", "RUNWAY_API_KEY",           # AI animation: Kling via fal.ai, Runway Gen-4 (Gemini Omni uses GEMINI_API_KEY)
     "YOUTUBE_API_KEY",                     # plain API key: trend scan (hot kids videos), separate from the upload OAuth
 ]

@@ -113,6 +113,7 @@ def _parts(files: list[dict], key: str) -> list[dict]:
 
 
 def cleanup(dry: bool = False, deep: bool = False) -> dict:
+    from . import dubs
     db = get_db()
     now = datetime.now(timezone.utc)
     files = list_files()
@@ -152,7 +153,7 @@ def cleanup(dry: bool = False, deep: bool = False) -> dict:
                 drop(mine, "published long ago")
                 patches[e["id"]] = {"video_url": None, "archived": True}
             # 2. published a few days: keep only the small preview
-            elif age > timedelta(days=KEEP_FULL_DAYS) and _parts(files, vk):
+            elif age > timedelta(days=KEEP_FULL_DAYS) and _parts(files, vk) and not dubs.keep_picture(e):
                 drop(_parts(files, vk), "published: full copy is on YouTube")
                 patches[e["id"]] = {"archived": True}
         elif e["status"] in ("rejected", "failed"):
@@ -171,7 +172,7 @@ def cleanup(dry: bool = False, deep: bool = False) -> dict:
             if not deep and left() <= LIMIT_MB * SOFT:
                 break
             parts = [f for f in _parts(files, key_of(e["video_url"])) if f["path"] not in gone]
-            if parts:                          # uploaded (public or set to go live): YouTube has the full copy
+            if parts and not dubs.keep_picture(e):                          # uploaded (public or set to go live): YouTube has the full copy
                 drop(parts, "over the storage limit: full copy is on YouTube")
                 patches[e["id"]] = {**patches.get(e["id"], {}), "archived": True}
 
@@ -183,6 +184,8 @@ def cleanup(dry: bool = False, deep: bool = False) -> dict:
         for e in old:
             if not deep and left() <= LIMIT_MB * SOFT:
                 break
+            if dubs.keep_picture(e):
+                continue
             vk = key_of(e["video_url"])
             drop([f for f in files if f["path"] == vk or f["path"].startswith(vk + ".part")], "over the storage limit: video is on YouTube")
             patches[e["id"]] = {**patches.get(e["id"], {}), "video_url": None, "archived": True}

@@ -3,9 +3,9 @@
 Two levels:
   * localizations — every upload carries its title + description translated into these languages, so YouTube
     shows it in the viewer's own language (cheap: one model call per episode).
-  * editions — a full dubbed copy of the episode: translated script, native voices, same pictures; uploaded to
-    the main channel or a separate per-language channel (Settings → edition_channels). Kids under 7 can't read
-    subtitles, so a real dub is what actually reaches them.
+  * editions — the episode dubbed (dubs.py): translated script, native voices on the same picture, uploaded to the
+    second, dubbed channel; the main channel stays English. Kids under 7 can't read subtitles, so a real dub is
+    what actually reaches them.
 """
 from __future__ import annotations
 

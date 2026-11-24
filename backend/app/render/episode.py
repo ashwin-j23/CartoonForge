@@ -249,6 +249,10 @@ def thumbnail(script: dict, settings: dict, out: Path, size=(1280, 720)) -> Path
             put(icon(obj, int(H * .5)), W * .76, cy=H * .62)
     words = (script.get("key_words") or [script.get("title_idea", "")])
     label = _thumb_words(script.get("title_idea") or "", words, meta.get("thumb_text", ""))
+    if settings.get("_no_words"):           # the dubbed channel: one picture that works in every language
+        bg = ImageEnhance.Contrast(bg.convert("RGB")).enhance(1.1)
+        bg.save(out, "JPEG", quality=92)
+        return out
     ti = fit_text(label, int(W * .66), int(H * .24), fill=palette.highlight(), stroke=OUT, stroke_w=.14)
     ti.putalpha(ti.split()[-1].point(lambda v: v if v > 40 else 0))   # drop the faint haze: no box on bright backgrounds
     tx = W * .5 if style == "duo" else (W * .62 if style != "object" else W * .55)

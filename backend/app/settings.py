@@ -40,8 +40,8 @@ DEFAULTS: dict = {
     "shorts_made_for_kids": False,        # owner's choice (Nov 23): Shorts go up as 'not made for kids'; long videos stay made for kids
     "ai_disclosure": False,               # YouTube's synthetic-media label (needed only for realistic content)
     "localize_languages": ["es", "hi", "pt", "fr", "ar", "id", "de", "ja", "ru", "ta", "zh-Hans", "ko"],
-    "editions": [],                       # full dubbed editions to render per episode, e.g. ["es", "hi"]
-    "edition_channels": {},               # language -> refresh token of a separate channel (empty = main channel)
+    "editions": ["es", "hi", "id", "pt"],  # languages every episode is dubbed into, for the dubbed channel (dubs.py)
+    "dub_times": ["09:00", "17:00"],      # when dubs go live on the dubbed channel (channel time zone), one per slot
     "voices": {},                         # character id -> voice override (empty = cast defaults)
     "voice_rate": "-4%",                  # a touch slower than adult narration
     "music": True,
