@@ -1190,7 +1190,7 @@ def dub_status():
     return dubs.status()
 
 
-@app.delete("/api/dubs/channel", dependencies=[Depends(auth)])
+@app.post("/api/dubs/disconnect", dependencies=[Depends(auth)])
 def dub_disconnect():
     """Forget the dubbed channel's sign-in (its videos stay on YouTube)."""
     from .settings import save_secrets

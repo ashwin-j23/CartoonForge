@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { del, get, mediaUrl, put } from '../api'
+import { get, mediaUrl, post, put } from '../api'
 import Icon from '../components/icons'
 import { Badge, ChipSelect, fmtNum, PageHead, Skeleton, Spinner, useAction, useApi, useStatic, useToast } from '../components/ui'
 
@@ -100,7 +100,7 @@ export default function Channel() {
                 </div>
                 <button className="btn" onClick={() => connect('dub')} disabled={busy === 'connect'}><Icon name="refresh" size={15} />Reconnect</button>
                 <button className="btn ghost" disabled={busy === 'disc'}
-                  onClick={async () => { const r = await run('disc', () => del('/dubs/channel'), 'Dubbed channel disconnected'); if (r) dub.reload() }}>Disconnect</button>
+                  onClick={async () => { const r = await run('disc', () => post('/dubs/disconnect'), 'Dubbed channel disconnected'); if (r) dub.reload() }}>Disconnect</button>
               </div>
             ) : (
               <div className="row between wrap-row">
