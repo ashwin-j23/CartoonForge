@@ -89,6 +89,9 @@ def test_upload_uses_the_dubbed_channel_with_the_same_picture(monkeypatch, tmp_p
 
         def query(self, *a, **k):
             return [ep]
+
+        def get_setting(self, k, d=None):
+            return {"title": "Hoppy World"}
     monkeypatch.setattr(dubs, "get_db", lambda: DB())
     monkeypatch.setattr(dubs, "token", lambda: "DUB")
     monkeypatch.setattr(dubs, "app_settings", lambda: {"timezone": "UTC", "editions": ["es"]})
@@ -111,12 +114,14 @@ def test_upload_uses_the_dubbed_channel_with_the_same_picture(monkeypatch, tmp_p
 
 def test_dub_description_has_the_chapters_in_its_own_language(monkeypatch):
     monkeypatch.setattr(dubs, "app_settings", lambda: {"channel_name": "Hoppy"})
+    monkeypatch.setattr(dubs, "channel_name", lambda: "Hoppy World")
     tl = [{"title": t, "kind": "story", "start": s, "end": s + 60} for t, s in (("Go", 0.3), ("Mud", 60), ("Song", 120))]
     ep = {"timeline": tl, "meta": {"localizations": {"es": {"title": "Hola", "description":
-          "Uno.\n\n0:00 Go\n1:00 Mud\n2:00 Song\n\nDos youtube.com/@X?sub_confirmation=1"}}}}
+          "Uno. Subscribe to Hoppy!\n\n0:00 Go\n1:00 Mud\n2:00 Song\n\nDos youtube.com/@X?sub_confirmation=1"}}}}
     script = {"segments": [{"title": t} for t in ("Vamos", "Barro", "Canción")]}
     d = dubs.dub_meta(ep, "es", script)["description"]
-    assert "1:00 Barro" in d and "2:00 Canción" in d and "Mud" not in d and "youtube.com" not in d and d.startswith("Uno.") and "Dos" in d
+    assert "1:00 Barro" in d and "2:00 Canción" in d and "Mud" not in d and "youtube.com" not in d and d.startswith("Uno. Subscribe to Hoppy World!") and "Dos" in d
+    assert dubs.dub_meta(ep, "es", script)["playlist"].endswith("· Hoppy World")
 
 
 def test_the_main_channel_refuses_other_languages():

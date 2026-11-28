@@ -122,13 +122,23 @@ def dub_meta(ep: dict, lang: str, script: dict | None = None) -> dict:
     if not loc.get("title"):
         raise RuntimeError(f"Title not translated into {languages.name(lang)} (AI busy)")
     native = languages.LANGS[lang][1]
+    name = channel_name()
     desc = re.sub(r"\S*youtube\.com/@\S+", "", loc.get("description") or "").replace("👉 \n", "\n").strip()
+    main = app_settings().get("channel_name", "Hoppy Hop Hop")
+    if name != main:                                        # 'subscribe to …' means this channel, not the English one
+        desc = re.sub(rf"{re.escape(main)}(?! World)", name, desc, count=1)
     if script and len(ep.get("timeline") or []) == len(script["segments"]):
         ch = metamod.chapters([{**g, "title": seg["title"]} for g, seg in zip(ep["timeline"], script["segments"])])
         desc = re.sub(r"(?m)^\d+:\d\d .*(?:\n\d+:\d\d .*)+", lambda _: ch, desc, count=1) if ch else desc
     tags = [f"{native} cartoon", f"{languages.name(lang)} cartoon for kids", f"{languages.name(lang)} kids songs",
             f"{languages.name(lang)} stories for kids"] + list(m.get("tags") or [])
-    return {"title": loc["title"][:100], "description": desc, "tags": tags, "playlist": f"{native} · {app_settings().get('channel_name', 'Hoppy Hop Hop')}"}
+    return {"title": loc["title"][:100], "description": desc, "tags": tags, "playlist": f"{native} · {name}"}
+
+
+def channel_name() -> str:
+    """The dubbed channel's own name (from YouTube, cached by status()); the English name + ' World' until then."""
+    ch = get_db().get_setting("dub_channel_cache") or {}
+    return ch.get("title") or f"{app_settings().get('channel_name', 'Hoppy Hop Hop')} World"
 
 
 def thumb(ep: dict, lang: str, out: Path) -> Path:
