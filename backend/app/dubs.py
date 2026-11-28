@@ -23,6 +23,7 @@ from .settings import app_settings, secret
 TOKEN = "YT_DUB_REFRESH_TOKEN"
 LEAD_DAYS = 3          # an approved episode is dubbed this many days before it goes live in English
 MAX_TRIES = 3
+LIMIT_PAUSE_H = 24     # YouTube's daily upload cap for the channel was hit: no dubbing until it resets
 TIGHT_MAX = .12        # more lines than this that don't fit their time: the dub is not good enough to publish
 
 
@@ -218,6 +219,12 @@ def make(eid: str, lang: str, picture: Path | None = None, log=print) -> dict:
             log(f"Dub playlist: {str(e)[:120]}")
         return ed
     except Exception as e:  # noqa: BLE001
+        if "exceeded the number of videos" in str(e):      # the channel's daily upload cap, not this dub's fault
+            until = time.time() + LIMIT_PAUSE_H * 3600
+            get_db().set_setting("dub_paused_until", until)
+            log(f"{languages.name(lang)} dub waits: YouTube's daily upload limit for the dubbed channel was reached; "
+                f"dubbing resumes in {LIMIT_PAUSE_H} h")
+            return _save(eid, lang, {"status": "planned", "tries": tries - 1, "error": "Waiting: the dubbed channel's daily upload limit"})
         log(f"{languages.name(lang)} dub failed (try {tries} of {MAX_TRIES}): {str(e)[:250]}")
         return _save(eid, lang, {"status": "failed" if tries >= MAX_TRIES else "planned", "error": str(e)[:250]})
     finally:
@@ -230,6 +237,11 @@ def _height(p: Path) -> int:
     r = subprocess.run([config.FFMPEG, "-hide_banner", "-i", str(p)], capture_output=True, text=True)
     m = re.search(r"Video:.*?, \d{2,5}x(\d{2,5})", r.stderr)
     return int(m.group(1)) if m else 0
+
+
+def paused() -> bool:
+    """True while the dubbed channel waits for YouTube's daily upload limit to reset."""
+    return time.time() < float(get_db().get_setting("dub_paused_until") or 0)
 
 
 def due() -> list[tuple[str, str]]:
@@ -256,10 +268,10 @@ def run(budget_s: float = 3600) -> list[str]:
     """Worker step: dub what is due until the time is used up."""
     from .pipeline import log
     t0, done = time.time(), []
-    if app_settings().get("kill_switch"):
+    if app_settings().get("kill_switch") or paused():
         return done
     for eid, lang in due():
-        if time.time() - t0 > budget_s:
+        if time.time() - t0 > budget_s or paused():
             break
         ed = make(eid, lang, log=lambda m, e=eid: log(m, ep=e) if "dub" in m.lower() else None)
         done.append(f"{eid}:{lang}:{ed['status']}")
@@ -325,7 +337,8 @@ def status() -> dict:
     from .publish import youtube
     db = get_db()
     s = app_settings()
-    out: dict = {"connected": False, "languages": s.get("editions") or [], "upcoming": [], "recent": [], "failed": []}
+    out: dict = {"connected": False, "languages": s.get("editions") or [], "upcoming": [], "recent": [], "failed": [],
+                 "paused_until": float(db.get_setting("dub_paused_until") or 0) if paused() else None}
     if token():
         ch = db.get_setting("dub_channel_cache") or {}
         if time.time() - ch.get("t", 0) > 3600:

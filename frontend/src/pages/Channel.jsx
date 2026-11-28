@@ -109,6 +109,9 @@ export default function Channel() {
               </div>
             )}
             {dub.data.error && <p className="small danger-text">{dub.data.error}</p>}
+            {dub.data.paused_until && (
+              <div className="banner warn"><Icon name="clock" size={18} /><div><b>YouTube's daily upload limit was reached.</b> Dubbing resumes {new Date(dub.data.paused_until * 1000).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}. Verifying the channel's phone number (youtube.com/verify) raises the limit.</div></div>
+            )}
             {!s ? <Skeleton h={80} /> : (
               <div className="block">
                 <h3 className="h4">Languages</h3>

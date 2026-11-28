@@ -137,3 +137,34 @@ def test_story_animals_are_never_silently_drawn_as_bears():
     assert [key(s)["_key"] for s in ("eagle", "spider", "ox", "red fox", "elephant", "lamb", "jackdaw")] == \
         ["eagle", "spider", "cow", "fox", "elephant", "sheep", "crow"]
     assert key("eagle")["outfit"] == "none"
+
+
+def test_daily_upload_limit_pauses_the_channel_without_using_up_tries(monkeypatch, tmp_path):
+    from app import config
+    store = {"e": {"id": "e", "editions": {"es": {"status": "planned", "tries": 0}}}, "settings": {}}
+
+    class DB:
+        def get(self, t, i):
+            return store["e"]
+
+        def update(self, t, i, p):
+            store["e"].update(p)
+
+        def get_setting(self, k, d=None):
+            return store["settings"].get(k, d)
+
+        def set_setting(self, k, v):
+            store["settings"][k] = v
+    monkeypatch.setattr(dubs, "get_db", lambda: DB())
+    monkeypatch.setattr(dubs, "token", lambda: "DUB")
+    monkeypatch.setattr(config, "WORK_DIR", tmp_path)
+
+    def boom(*a, **k):
+        raise RuntimeError('YouTube init failed 400: {"message": "The user has exceeded the number of videos they may upload."}')
+    monkeypatch.setattr(dubs, "_height", boom)
+    ed = dubs.make("e", "es", picture=tmp_path / "p.mp4")
+    assert ed["status"] == "planned" and ed["tries"] == 0 and "upload limit" in ed["error"]
+    assert dubs.paused()
+    monkeypatch.setattr(dubs, "due", lambda: [("e", "es")])
+    monkeypatch.setattr(dubs, "app_settings", lambda: {})
+    assert dubs.run() == []                    # nothing is dubbed (and nothing wasted) until the limit resets
