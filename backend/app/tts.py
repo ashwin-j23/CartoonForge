@@ -19,6 +19,7 @@ voice of the same language and gender.
 from __future__ import annotations
 
 import asyncio
+import time
 import base64
 import ctypes
 import os
@@ -460,7 +461,15 @@ def _edge_tts(text, voice, rate, mood):
                 words.append({"w": ch["text"], "s": s, "e": s + ch["duration"] / 1e7})
         return bytes(audio), words
 
-    audio, words = asyncio.run(run())
+    for attempt in range(3):                       # the free service drops a connection now and then: try again
+        try:
+            audio, words = asyncio.run(run())
+            if audio:
+                break
+        except Exception:  # noqa: BLE001
+            if attempt == 2:
+                raise
+        time.sleep(1.5 * (attempt + 1))
     if not audio:
         raise RuntimeError("edge-tts returned no audio")
     return decode_bytes(audio, ".mp3"), words
