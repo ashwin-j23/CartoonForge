@@ -308,12 +308,12 @@ def short_caption(text: str, out: Path) -> Path | None:
     return out
 
 
-def cut_short(video: Path, start: float, end: float, out: Path, title: str) -> Path:
+def cut_short(video: Path, start: float, end: float, out: Path, title: str, crop_bottom: float = 0.0) -> Path:
     """Vertical 1080x1920 Short: the 16:9 picture centred over a blurred, zoomed copy of itself, the hook words
     dropping in from the top on frame one (Shorts viewers decide in the first second: motion + words, no fade-in)."""
     dur = max(10.0, min(58.0, end - start))
     cap = short_caption(title, out.with_name("caption.png"))
-    vf = ("[0:v]split=2[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=24:2[bg];"
+    vf = (("[0:v]crop=iw:ih*%.3f:0:0," % (1 - crop_bottom) if crop_bottom else "[0:v]") + "split=2[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=24:2[bg];"
           "[b]scale=1080:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2-140" + ("[v];[v][1:v]overlay=0:'min(150,-h+(150+h)*t/0.35)'"
                                                                     if cap else "") + "[out]")
     ins = ["-ss", f"{start:.2f}", "-t", f"{dur:.2f}", "-i", str(video)] + (["-loop", "1", "-t", f"{dur:.2f}", "-i", str(cap)] if cap else [])

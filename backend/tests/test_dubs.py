@@ -200,7 +200,7 @@ def test_dub_short_is_cut_stored_and_uploaded_after_its_dub(monkeypatch, tmp_pat
     monkeypatch.setattr(dubs, "app_settings", lambda: {"timezone": "UTC", "shorts_made_for_kids": False})
     monkeypatch.setattr(config, "WORK_DIR", tmp_path)
     cuts = {}
-    monkeypatch.setattr(epr, "cut_short", lambda v, s, e, out, cap: cuts.update(s=s, e=e, cap=cap) or out)
+    monkeypatch.setattr(epr, "cut_short", lambda v, s, e, out, cap, crop_bottom=0: cuts.update(s=s, e=e, cap=cap) or out)
     monkeypatch.setattr(storage, "put", lambda f, k, t: "https://x/storage/v1/object/public/b/" + k)
     monkeypatch.setattr(storage, "fetch", lambda u: tmp_path / "s.mp4")
     monkeypatch.setattr(storage, "remove", lambda ks: None)
@@ -210,7 +210,10 @@ def test_dub_short_is_cut_stored_and_uploaded_after_its_dub(monkeypatch, tmp_pat
     dubs.make_short(ep, "es", tmp_path / "dub.mp4", script, tmp_path)
     sh = ep["editions"]["es"]["short"]
     assert cuts == {"s": 100, "e": 140, "cap": "¡Gracias, gracias!"} and sh["status"] == "planned"
-    assert sh["title"] == "Hola Hoppy 🎵 ¡Canta con nosotros! #shorts"
+    assert sh["title"] == "Hola Hoppy 🎵 ¡Canta con nosotros!"
+    assert dubs.short_name("¡Hoppy ayuda al carretero! Vídeos educativos 🚜 Esfuérzate") == "¡Hoppy ayuda al carretero!"
+    assert dubs.short_name("हॉपी ने की मदद! बच्चों के लिए शैक्षिक वीडियो 🚜 अपनी पूरी") == "हॉपी ने की मदद!"
+    assert dubs.short_name("Petualangan Rumah Tikus - Cerita Pengantar Tidur") == "Petualangan Rumah Tikus"
     sent = {}
     monkeypatch.setattr(youtube, "upload", lambda f, title, desc, tags, privacy, th, lang, loc, rt, cat, **kw:
                         sent.update(title=title, desc=desc, rt=rt, lang=lang, **kw) or {"id": "S", "url": "https://youtube.com/shorts/S"})

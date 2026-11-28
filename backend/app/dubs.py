@@ -378,13 +378,23 @@ def make_short(ep: dict, lang: str, video: Path, script: dict, work: Path, log=p
     if not app_settings().get("dub_shorts", True):
         return None
     start, end, cap = short_cut(ep, script)
-    out = epr.cut_short(video, max(0, start), end, work / f"short-{lang}.mp4", cap)
+    out = epr.cut_short(video, max(0, start), end, work / f"short-{lang}.mp4", cap, crop_bottom=.17)   # English lyric line off
     url = storage.put(out, f"{ep['id']}/dub-short-{lang}-{int(time.time())}.mp4", "video/mp4")
-    title = (re.sub(r"\s*[|:].*$", "", (_title_of(ep, lang) or "")).strip()[:55] + f" 🎵 {SING.get(lang, '🎵')} #shorts").strip()
+    title = f"{short_name(_title_of(ep, lang))} 🎵 {SING.get(lang, '🎵')}".strip()
     ed = _save(ep["id"], lang, {"short": {"status": "planned", "video_url": url, "title": title[:100],
                                           "duration": round(end - start, 1)}})
     log(f"{languages.name(lang)} Short cut for the dubbed channel ({end - start:.0f}s)")
     return ed
+
+
+def short_name(title: str, limit: int = 42) -> str:
+    """The episode's own name for a Short title: before the first emoji / '|' / ':' / ' - ', never cut mid-word."""
+    t = re.split(r"\s*(?:[|:–]| - |[\U0001F300-\U0001FAFF\u2600-\u27BF])", str(title or ""))[0].strip()
+    m = re.match(r"^(.{6,}?[!?！？])\s", t + " ")             # 'Hoppy Helps the Wagoner! Videos for…' -> the name
+    t = m.group(1) if m else t
+    while len(t) > limit and " " in t:
+        t = t.rsplit(" ", 1)[0].rstrip(",;")
+    return t[:limit]
 
 
 def _title_of(ep: dict, lang: str) -> str:
