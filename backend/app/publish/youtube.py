@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -352,6 +354,36 @@ def enforce_made_for_kids(refresh_token: str = "", skip: set[str] | None = None)
                 update_video(v["id"], refresh_token, made_for_kids=True)
                 fixed.append(v["id"])
     return fixed
+
+
+def stuck_uploads(refresh_token: str = "", older_than_h: float = 6, recent: int = 50) -> list[dict]:
+    """The channel's recent uploads YouTube never processed: a file it took in but then turned away (e.g. the
+    daily upload limit) is left as a private 'Processing will begin shortly' stub that never finishes.
+    Quota: ~3 units."""
+    h = {"Authorization": f"Bearer {_access_token(refresh_token)}"}
+    ch = httpx.get("https://www.googleapis.com/youtube/v3/channels", timeout=30, headers=h,
+                   params={"part": "contentDetails", "mine": "true"})
+    ch.raise_for_status()
+    uploads = ch.json()["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    r = httpx.get("https://www.googleapis.com/youtube/v3/playlistItems", timeout=30, headers=h,
+                  params={"part": "contentDetails", "playlistId": uploads, "maxResults": min(recent, 50)})
+    r.raise_for_status()
+    ids = [i["contentDetails"]["videoId"] for i in r.json().get("items", [])]
+    if not ids:
+        return []
+    r = httpx.get("https://www.googleapis.com/youtube/v3/videos", timeout=30, headers=h,
+                  params={"part": "snippet,status,processingDetails", "id": ",".join(ids)})
+    r.raise_for_status()
+    cut = time.time() - older_than_h * 3600
+    out = []
+    for v in r.json().get("items", []):
+        st, pr = v.get("status") or {}, v.get("processingDetails") or {}
+        when = datetime.fromisoformat(v["snippet"]["publishedAt"].replace("Z", "+00:00")).timestamp()
+        if (st.get("uploadStatus") in ("uploaded", "failed", "rejected") and pr.get("processingStatus") != "succeeded"
+                and st.get("privacyStatus") == "private" and when < cut):
+            out.append({"id": v["id"], "title": v["snippet"]["title"], "uploaded": v["snippet"]["publishedAt"],
+                        "upload_status": st.get("uploadStatus"), "processing": pr.get("processingStatus")})
+    return out
 
 
 def delete(video_id: str, refresh_token: str = "") -> None:

@@ -222,3 +222,23 @@ def test_dub_short_is_cut_stored_and_uploaded_after_its_dub(monkeypatch, tmp_pat
     assert sent["publish_at"] > "2026-12-02T02:00" and ep["editions"]["es"]["short"]["status"] == "published"
     script["language"] = "hi"
     assert dubs.short_cut(ep, script)[2] == ""                 # no caption the font can't draw
+
+
+def test_stuck_uploads_turned_away_by_the_limit_are_removed_but_tracked_dubs_never(monkeypatch):
+    from app.publish import youtube
+
+    class DB:
+        s = {}
+        def get_setting(self, k): return self.s.get(k)
+        def set_setting(self, k, v): self.s[k] = v
+        def query(self, *a, **k):
+            return [{"id": "e1", "editions": {"es": {"youtube": {"id": "LIVE"}, "short": {"youtube": {"id": "SHORT"}}}}}]
+    db = DB()
+    monkeypatch.setattr(dubs, "get_db", lambda: db)
+    monkeypatch.setattr(dubs, "token", lambda: "tok")
+    monkeypatch.setattr(youtube, "stuck_uploads", lambda *a, **k: [{"id": "STUB", "title": "t"}, {"id": "LIVE", "title": "t"},
+                                                                    {"id": "SHORT", "title": "t"}])
+    gone = []
+    monkeypatch.setattr(youtube, "delete", lambda vid, tok="": gone.append(vid))
+    assert dubs.clear_stuck(lambda m: None) == ["STUB"] and gone == ["STUB"]
+    assert dubs.clear_stuck(lambda m: None) == []          # checked at most every 6 h

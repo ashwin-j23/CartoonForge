@@ -270,11 +270,42 @@ def due() -> list[tuple[str, str]]:
     return out
 
 
+def clear_stuck(log=print) -> list[str]:
+    """Delete the dubbed channel's stuck uploads: when YouTube turns an upload away for the daily limit it can still
+    leave a private stub ('Processing will begin shortly') that never processes and isn't linked to any dub.
+    Only stubs older than 6 h that no dub or Short points to are removed; the dub itself stays queued and goes up
+    again. Checked at most every 6 h."""
+    from .publish import youtube
+    db = get_db()
+    if not token() or time.time() - float(db.get_setting("dub_stuck_checked") or 0) < 6 * 3600:
+        return []
+    db.set_setting("dub_stuck_checked", time.time())
+    gone, known = [], set()
+    try:
+        for e in db.query("episodes", in_={"status": ["approved", "published"]}, limit=500, light=True):
+            for ed in (e.get("editions") or {}).values():
+                if isinstance(ed, dict):
+                    known |= {(ed.get("youtube") or {}).get("id"), ((ed.get("short") or {}).get("youtube") or {}).get("id")}
+        for v in youtube.stuck_uploads(token()):
+            if v["id"] in known:
+                continue
+            youtube.delete(v["id"], token())
+            gone.append(v["id"])
+            log(f"Removed a stuck upload on the dubbed channel ({v['title'][:60]}): YouTube never processed it; "
+                "its dub stays queued and goes up again")
+    except Exception as e:  # noqa: BLE001
+        log(f"Dubbed channel stuck-upload check: {str(e)[:160]}")
+    return gone
+
+
 def run(budget_s: float = 3600) -> list[str]:
     """Worker step: dub what is due until the time is used up."""
     from .pipeline import log
     t0, done = time.time(), []
-    if app_settings().get("kill_switch") or paused():
+    if app_settings().get("kill_switch"):
+        return done
+    done += [f"{v}:stuck-removed" for v in clear_stuck(lambda m: log(m))]
+    if paused():
         return done
     for eid, lang in due():
         if time.time() - t0 > budget_s or paused():
