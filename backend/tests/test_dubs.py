@@ -197,7 +197,7 @@ def test_dub_short_is_cut_stored_and_uploaded_after_its_dub(monkeypatch, tmp_pat
             store["settings"][k] = v
     monkeypatch.setattr(dubs, "get_db", lambda: DB())
     monkeypatch.setattr(dubs, "token", lambda: "DUB")
-    monkeypatch.setattr(dubs, "app_settings", lambda: {"timezone": "UTC", "shorts_made_for_kids": False})
+    monkeypatch.setattr(dubs, "app_settings", lambda: {"timezone": "UTC", "shorts_made_for_kids": False, "dub_shorts_made_for_kids": True})
     monkeypatch.setattr(config, "WORK_DIR", tmp_path)
     cuts = {}
     monkeypatch.setattr(epr, "cut_short", lambda v, s, e, out, cap, crop_bottom=0: cuts.update(s=s, e=e, cap=cap) or out)
@@ -218,7 +218,7 @@ def test_dub_short_is_cut_stored_and_uploaded_after_its_dub(monkeypatch, tmp_pat
     monkeypatch.setattr(youtube, "upload", lambda f, title, desc, tags, privacy, th, lang, loc, rt, cat, **kw:
                         sent.update(title=title, desc=desc, rt=rt, lang=lang, **kw) or {"id": "S", "url": "https://youtube.com/shorts/S"})
     assert dubs.upload_shorts() == ["e:es:short"]
-    assert sent["rt"] == "DUB" and sent["short"] and sent["made_for_kids"] is False and "#cancionesinfantiles" in sent["desc"]
+    assert sent["rt"] == "DUB" and sent["short"] and sent["made_for_kids"] is True and "#cancionesinfantiles" in sent["desc"]
     assert sent["publish_at"] > "2026-12-02T02:00" and ep["editions"]["es"]["short"]["status"] == "published"
     script["language"] = "hi"
     assert dubs.short_cut(ep, script)[2] == ""                 # no caption the font can't draw

@@ -41,9 +41,9 @@ DEFAULTS: dict = {
     "ai_disclosure": False,               # YouTube's synthetic-media label (needed only for realistic content)
     "localize_languages": ["es", "hi", "pt", "fr", "ar", "id", "de", "ja", "ru", "ta", "zh-Hans", "ko"],
     "editions": ["es", "hi", "id", "pt"],  # languages every episode is dubbed into, for the dubbed channel (dubs.py)
-    "dub_times": ["09:00", "17:00"],
+    "dub_times": ["09:00", "17:00"],      # when dubs go live on the dubbed channel (channel time zone), one per slot
     "dub_shorts": True,                   # a Short from each dub's song, uploaded to the dubbed channel after the dub
-    "dub_shorts_made_for_kids": None,     # None = same as shorts_made_for_kids (owner's choice for English Shorts)      # when dubs go live on the dubbed channel (channel time zone), one per slot
+    "dub_shorts_made_for_kids": True,     # owner, Nov 28: World Shorts are made for kids (COPPA research); English Shorts keep shorts_made_for_kids
     "voices": {},                         # character id -> voice override (empty = cast defaults)
     "voice_rate": "-4%",                  # a touch slower than adult narration
     "music": True,
