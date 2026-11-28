@@ -54,13 +54,14 @@ function Item({ it, catMap, past }) {
               <span className={`sch-kind ${it.kind === 'short' ? 'short' : ''}`}>{it.kind === 'short' ? 'Short' : it.kind === 'dub' ? `Dub · ${it.lang_name}` : 'Episode'}</span>
               {it.duration ? <span>{fmtDur(it.duration)}</span> : null}
               {st === 'live' ? <><span><Icon name="eye" size={12} /> {fmtNum(it.views || 0)} views</span><span>live {ago(it.publish_at)}</span></>
-                : st === 'failed' ? <span className="sch-err" title={it.error}>was due {ago(it.publish_at)}{it.error ? ` · ${it.error}` : ''}</span>
+                : st === 'failed' ? <span className="sch-err" title={it.error}>{ts(it.publish_at) > Date.now() ? `due in ${until(it.publish_at)}` : `was due ${ago(it.publish_at)}`}{it.error ? ` · ${it.error}` : ''}</span>
+                : chOf(it) === 'world' && !it.url ? <span className="sch-in" title={it.note || undefined}>{it.note ? `${it.note.replace(/^Waiting: /, 'Waiting for ')} · dubbed after the English one is live` : 'Dubbed up to 3 days before the English one goes live'}</span>
                 : <span className="sch-in">goes live in {until(it.publish_at)}</span>}
             </span>
           </span>
         </Link>
         <span className="sch-card-side">
-          <StageChip stage={st} label={st === 'failed' ? 'Late' : undefined} />
+          <StageChip stage={st} label={st === 'failed' ? 'Late' : chOf(it) === 'world' && !it.url && st === 'scheduled' ? 'Queued' : undefined} />
           {it.url
             ? <a className="icon-btn sm" href={it.url} target="_blank" rel="noreferrer" title="Open on YouTube" aria-label="Open on YouTube"><Icon name="external" size={15} /></a>
             : <span className="sch-noyt" title={chOf(it) === 'world' ? 'Dubbed and uploaded up to 3 days before the English episode goes live' : 'Uploads by itself up to 12 hours before its time'}>{chOf(it) === 'world' ? 'not dubbed yet' : 'not uploaded yet'}</span>}

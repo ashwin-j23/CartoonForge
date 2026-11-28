@@ -384,6 +384,7 @@ export default function EpisodeDetail() {
                               {st === 'published' ? `${later ? 'Goes live' : 'Live since'} ${fmtDate(e.publish_at)}${e.stats?.views != null ? ` · ${fmtNum(e.stats.views)} views` : ''}`
                                 : st === 'rendering' ? 'Dubbing now…'
                                 : st === 'failed' ? `Failed after ${e.tries || 3} tries: ${e.error || ''}`
+                                : e.error?.startsWith('Waiting') ? `${e.error.replace(/^Waiting: /, 'Waiting for ')}. Uploads by itself when it resets.`
                                 : e.error ? `Will try again: ${e.error}` : 'Queued: dubbed up to 3 days before the English one goes live'}
                             </span>
                           </span>

@@ -244,7 +244,7 @@ function Status({ ep, bar, onRetry, busy }) {
     const p = ep.progress
     return p && p.pct != null && p.pct < 100
       ? <Progress pct={p.pct} label={p.stage} tone="violet" />
-      : <div className="eps-status"><span className="eps-faint"><Icon name="clock" size={12} /> {ep.kind === 'dub' ? 'Dub queued: made up to 3 days before the English one goes live' : ep.status === 'planned' ? 'Queued' : ep.status === 'scripted' ? 'Script ready, rendering next' : 'Working on it…'}</span></div>
+      : <div className="eps-status"><span className="eps-faint"><Icon name="clock" size={12} /> {ep.kind === 'dub' ? (ep.error?.startsWith('Waiting') ? ep.error.replace(/^Waiting: /, 'Waiting for ') : 'Dub queued: made up to 3 days before the English one goes live') : ep.status === 'planned' ? 'Queued' : ep.status === 'scripted' ? 'Script ready, rendering next' : 'Working on it…'}</span></div>
   }
   if (st === 'review') {
     return <div className="eps-status"><ScoreBadge score={ep.score} bar={bar} /><span className="eps-cta">Review now<Icon name="arrowRight" size={13} /></span></div>
