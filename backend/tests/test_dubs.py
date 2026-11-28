@@ -242,3 +242,18 @@ def test_stuck_uploads_turned_away_by_the_limit_are_removed_but_tracked_dubs_nev
     monkeypatch.setattr(youtube, "delete", lambda vid, tok="": gone.append(vid))
     assert dubs.clear_stuck(lambda m: None) == ["STUB"] and gone == ["STUB"]
     assert dubs.clear_stuck(lambda m: None) == []          # checked at most every 6 h
+
+
+def test_waiting_dub_shorts_are_shown_when_they_can_go_not_on_their_dubs_time(monkeypatch):
+    class DB:
+        def get_setting(self, k): return None
+    monkeypatch.setattr(dubs, "get_db", lambda: DB())
+    monkeypatch.setattr(dubs, "app_settings", lambda: {"timezone": "UTC", "dub_times": ["09:00", "17:00"]})
+    dub = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+    out = [{"kind": "short", "status": "approved", "publish_at": dub.isoformat()},
+           {"kind": "short", "status": "approved", "publish_at": dub.isoformat()},
+           {"kind": "short", "status": "published", "publish_at": dub.isoformat()}]
+    dubs._estimate_short_times([], out)
+    a, b = out[0]["publish_at"], out[1]["publish_at"]
+    assert a >= (dub + timedelta(hours=12)).isoformat() and b > a          # after its dub, one per slot
+    assert out[0]["error"].startswith("Waiting") and out[2]["publish_at"] == dub.isoformat()

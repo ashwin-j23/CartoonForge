@@ -161,13 +161,14 @@ def thumb(ep: dict, lang: str, out: Path) -> Path:
 
 
 # ---------------------------------------------------------------- schedule
-def next_slot(rows: list[dict], after: datetime) -> str:
-    """The dubbed channel's next free time (dub_times every day), never before the English episode."""
+def next_slot(rows: list[dict], after: datetime, booked: set | None = None) -> str:
+    """The dubbed channel's next free time (dub_times every day), never before the English episode.
+    `booked`: extra times (ISO, to the minute) to treat as taken."""
     s = app_settings()
     tz = ZoneInfo(s.get("timezone") or "UTC")
     taken = {str((e or {}).get("publish_at"))[:16] for r in rows for e in (r.get("editions") or {}).values() if isinstance(e, dict)} | \
         {str(((e or {}).get("short") or {}).get("publish_at"))[:16] for r in rows for e in (r.get("editions") or {}).values()
-         if isinstance(e, dict)}
+         if isinstance(e, dict)} | set(booked or ())
     start = max(after, datetime.now(timezone.utc)) + timedelta(hours=1)
     for d in range(200):
         for tm in sorted(s.get("dub_times") or ["09:00", "17:00"]):
@@ -354,7 +355,30 @@ def items(rows: list[dict], s: dict | None = None) -> list[dict]:
                             "published_at": sh.get("publish_at") if up else None, "duration": sh.get("duration"),
                             "youtube": sh.get("youtube"), "url": (sh.get("youtube") or {}).get("url"), "error": sh.get("error"),
                             "views": (sh.get("stats") or {}).get("views"), "progress": None})
+    _estimate_short_times(rows, out)
     return out
+
+
+def _estimate_short_times(rows: list[dict], out: list[dict]) -> None:
+    """A stored Short isn't booked yet: it goes up 12 h or more after its dub (and after any upload-limit pause),
+    in the next free slot. Show it there, not on its dub's time, so a day never lists a Short as due that can't be."""
+    waiting = [d for d in out if d["kind"] == "short" and d["status"] == "approved"]
+    if not waiting:
+        return
+    try:
+        pause = datetime.fromtimestamp(float(get_db().get_setting("dub_paused_until") or 0), timezone.utc)
+    except Exception:  # noqa: BLE001
+        pause = datetime.fromtimestamp(0, timezone.utc)
+    booked: set = set()
+    for d in sorted(waiting, key=lambda d: str(d.get("publish_at"))):
+        dub = _parse(d.get("publish_at")) or datetime.now(timezone.utc)
+        try:
+            iso = next_slot(rows, max(dub + timedelta(hours=12), pause), booked)
+        except Exception:  # noqa: BLE001
+            continue
+        booked.add(iso[:16])
+        d["publish_at"] = iso
+        d["error"] = d.get("error") or "Waiting: goes up after its dub, in the next free slot (estimated time)"
 
 
 def refresh_stats() -> int:
@@ -440,39 +464,40 @@ def upload_shorts(budget_s: float = 600, log=print) -> list[str]:
         return []
     db, done, t0 = get_db(), [], time.time()
     rows = db.query("episodes", in_={"status": ["approved", "published"]}, limit=300, light=True)
-    for e in rows:
-        for lg, ed in (e.get("editions") or {}).items():
-            sh = (ed or {}).get("short") if isinstance(ed, dict) else None
-            if not sh or sh.get("status") != "planned" or ed.get("status") != "published" or time.time() - t0 > budget_s:
-                continue
-            work = config.WORK_DIR / f"dubshort-{e['id']}-{lg}"
-            work.mkdir(parents=True, exist_ok=True)
-            try:
-                f = storage.fetch(sh["video_url"])
-                after = _parse(ed.get("publish_at")) or datetime.now(timezone.utc)
-                when = next_slot(db.query("episodes", in_={"status": ["approved", "published"]}, limit=500, light=True),
-                                 after + timedelta(hours=12))
-                desc = (f"{SING.get(lg, '')} 🎵\n\n{(ed.get('youtube') or {}).get('url', '')}\n\n"
-                        f"{languages.LANGS[lg][1]} · {channel_name()}\n\n{TAGS.get(lg, '')} #HoppyHopHop #shorts").strip()
-                s = app_settings()
-                mfk = s.get("dub_shorts_made_for_kids")
-                res = youtube.upload(f, sh["title"], desc, ["shorts", languages.name(lg)] + list((e.get("meta") or {}).get("tags") or [])[:8],
-                                     "private", None, lg, None, token(), "10", short=True,
-                                     made_for_kids=bool(s.get("shorts_made_for_kids", False) if mfk is None else mfk),
-                                     synthetic=bool(s.get("ai_disclosure")), publish_at=when.replace("+00:00", "Z"))
-                _save(e["id"], lg, {"short": {**sh, "status": "published", "youtube": res, "publish_at": when}})
-                storage.remove([k for k in [__import__("app.janitor", fromlist=["key_of"]).key_of(sh["video_url"])] if k])
-                log(f"{languages.name(lg)} Short uploaded to the dubbed channel, public at {when}: {res['url']}")
-                done.append(f"{e['id']}:{lg}:short")
-            except Exception as ex:  # noqa: BLE001
-                if "exceeded the number of videos" in str(ex):
-                    db.set_setting("dub_paused_until", time.time() + LIMIT_PAUSE_H * 3600)
-                    log("Dub Shorts wait: YouTube's daily upload limit for the dubbed channel was reached")
-                    return done
-                _save(e["id"], lg, {"short": {**sh, "error": str(ex)[:200]}})
-                log(f"{languages.name(lg)} dub Short not uploaded: {str(ex)[:200]}")
-            finally:
-                shutil.rmtree(work, ignore_errors=True)
+    queue = sorted(((e, lg, ed) for e in rows for lg, ed in (e.get("editions") or {}).items() if isinstance(ed, dict)),
+                   key=lambda x: str(x[2].get("publish_at")))
+    for e, lg, ed in queue:
+        sh = (ed or {}).get("short") if isinstance(ed, dict) else None
+        if not sh or sh.get("status") != "planned" or ed.get("status") != "published" or time.time() - t0 > budget_s:
+            continue
+        work = config.WORK_DIR / f"dubshort-{e['id']}-{lg}"
+        work.mkdir(parents=True, exist_ok=True)
+        try:
+            f = storage.fetch(sh["video_url"])
+            after = _parse(ed.get("publish_at")) or datetime.now(timezone.utc)
+            when = next_slot(db.query("episodes", in_={"status": ["approved", "published"]}, limit=500, light=True),
+                             after + timedelta(hours=12))
+            desc = (f"{SING.get(lg, '')} 🎵\n\n{(ed.get('youtube') or {}).get('url', '')}\n\n"
+                    f"{languages.LANGS[lg][1]} · {channel_name()}\n\n{TAGS.get(lg, '')} #HoppyHopHop #shorts").strip()
+            s = app_settings()
+            mfk = s.get("dub_shorts_made_for_kids")
+            res = youtube.upload(f, sh["title"], desc, ["shorts", languages.name(lg)] + list((e.get("meta") or {}).get("tags") or [])[:8],
+                                 "private", None, lg, None, token(), "10", short=True,
+                                 made_for_kids=bool(s.get("shorts_made_for_kids", False) if mfk is None else mfk),
+                                 synthetic=bool(s.get("ai_disclosure")), publish_at=when.replace("+00:00", "Z"))
+            _save(e["id"], lg, {"short": {**sh, "status": "published", "youtube": res, "publish_at": when}})
+            storage.remove([k for k in [__import__("app.janitor", fromlist=["key_of"]).key_of(sh["video_url"])] if k])
+            log(f"{languages.name(lg)} Short uploaded to the dubbed channel, public at {when}: {res['url']}")
+            done.append(f"{e['id']}:{lg}:short")
+        except Exception as ex:  # noqa: BLE001
+            if "exceeded the number of videos" in str(ex):
+                db.set_setting("dub_paused_until", time.time() + LIMIT_PAUSE_H * 3600)
+                log("Dub Shorts wait: YouTube's daily upload limit for the dubbed channel was reached")
+                return done
+            _save(e["id"], lg, {"short": {**sh, "error": str(ex)[:200]}})
+            log(f"{languages.name(lg)} dub Short not uploaded: {str(ex)[:200]}")
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
     return done
 
 
