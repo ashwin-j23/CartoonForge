@@ -168,3 +168,54 @@ def test_daily_upload_limit_pauses_the_channel_without_using_up_tries(monkeypatc
     monkeypatch.setattr(dubs, "due", lambda: [("e", "es")])
     monkeypatch.setattr(dubs, "app_settings", lambda: {})
     assert dubs.run() == []                    # nothing is dubbed (and nothing wasted) until the limit resets
+
+
+def test_dub_short_is_cut_stored_and_uploaded_after_its_dub(monkeypatch, tmp_path):
+    from app import config, storage
+    from app.publish import youtube
+    from app.render import episode as epr
+    ep = {"id": "e", "status": "published", "song_regions": [{"start": 100, "end": 180}], "timeline": [],
+          "meta": {"tags": ["a"], "localizations": {"es": {"title": "Hola Hoppy | para niños"}}},
+          "editions": {"es": {"status": "published", "publish_at": "2026-12-01T14:00:00+00:00",
+                              "youtube": {"url": "https://youtu.be/D"}}}}
+    store = {"settings": {}}
+
+    class DB:
+        def get(self, t, i):
+            return ep
+
+        def update(self, t, i, p):
+            ep.update(p)
+
+        def query(self, *a, **k):
+            return [ep]
+
+        def get_setting(self, k, d=None):
+            return store["settings"].get(k, d) if k != "dub_channel_cache" else {"title": "Hoppy World", "t": 9e12}
+
+        def set_setting(self, k, v):
+            store["settings"][k] = v
+    monkeypatch.setattr(dubs, "get_db", lambda: DB())
+    monkeypatch.setattr(dubs, "token", lambda: "DUB")
+    monkeypatch.setattr(dubs, "app_settings", lambda: {"timezone": "UTC", "shorts_made_for_kids": False})
+    monkeypatch.setattr(config, "WORK_DIR", tmp_path)
+    cuts = {}
+    monkeypatch.setattr(epr, "cut_short", lambda v, s, e, out, cap: cuts.update(s=s, e=e, cap=cap) or out)
+    monkeypatch.setattr(storage, "put", lambda f, k, t: "https://x/storage/v1/object/public/b/" + k)
+    monkeypatch.setattr(storage, "fetch", lambda u: tmp_path / "s.mp4")
+    monkeypatch.setattr(storage, "remove", lambda ks: None)
+    script = {"language": "es", "segments": [{"kind": "song", "scenes": [
+        {"kind": "sing", "text": "¡Gracias, gracias!"}, {"kind": "sing", "text": "Sí, es verdad"},
+        {"kind": "sing", "text": "¡Gracias, gracias!"}, {"kind": "sing", "text": "Sí, es verdad"}]}]}
+    dubs.make_short(ep, "es", tmp_path / "dub.mp4", script, tmp_path)
+    sh = ep["editions"]["es"]["short"]
+    assert cuts == {"s": 100, "e": 140, "cap": "¡Gracias, gracias!"} and sh["status"] == "planned"
+    assert sh["title"] == "Hola Hoppy 🎵 ¡Canta con nosotros! #shorts"
+    sent = {}
+    monkeypatch.setattr(youtube, "upload", lambda f, title, desc, tags, privacy, th, lang, loc, rt, cat, **kw:
+                        sent.update(title=title, desc=desc, rt=rt, lang=lang, **kw) or {"id": "S", "url": "https://youtube.com/shorts/S"})
+    assert dubs.upload_shorts() == ["e:es:short"]
+    assert sent["rt"] == "DUB" and sent["short"] and sent["made_for_kids"] is False and "#cancionesinfantiles" in sent["desc"]
+    assert sent["publish_at"] > "2026-12-02T02:00" and ep["editions"]["es"]["short"]["status"] == "published"
+    script["language"] = "hi"
+    assert dubs.short_cut(ep, script)[2] == ""                 # no caption the font can't draw

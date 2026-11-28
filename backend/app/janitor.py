@@ -131,7 +131,8 @@ def cleanup(dry: bool = False, deep: bool = False) -> dict:
     # what episodes point at (a video key covers its parts + manifest)
     live: set[str] = set()
     for e in eps:
-        for u in (e.get("video_url"), e.get("thumb_url")):
+        shorts = [((ed or {}).get("short") or {}).get("video_url") for ed in (e.get("editions") or {}).values() if isinstance(ed, dict)]
+        for u in (e.get("video_url"), e.get("thumb_url"), *shorts):
             if k := key_of(u):
                 live.add(k)
     owned = lambda p: p in live or any(p.startswith(k + ".part") for k in live if k.endswith(".mp4"))   # noqa: E731

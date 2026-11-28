@@ -927,11 +927,11 @@ def calendar():
     from . import dubs
     sched = []
     for d in dubs.items(rows):                      # the dubbed channel: each language its own row
-        if d["status"] == "scripted" and not d.get("error"):
+        if d["status"] == "scripted" and not d.get("error") or (d["status"] == "approved" and not d.get("publish_at")):
             continue                                # not dubbed yet: it gets its time when it is made
         waiting = str(d.get("error") or "").startswith("Waiting")   # e.g. YouTube's daily upload limit: queued, not late
         st = {"published": "uploaded" if (d["publish_at"] or "") > now else "live", "failed": "late",
-              "rendering": "uploading"}.get(d["status"], "waiting" if waiting else "late")
+              "rendering": "uploading", "approved": "waiting"}.get(d["status"], "waiting" if waiting else "late")
         at = d["publish_at"] or d["parent_live_at"]
         if waiting and not d["publish_at"]:              # shown on the earliest day it can go out
             resume = datetime.fromtimestamp(float(get_db().get_setting("dub_paused_until") or 0), timezone.utc)

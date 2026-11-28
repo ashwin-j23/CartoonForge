@@ -165,7 +165,9 @@ def next_slot(rows: list[dict], after: datetime) -> str:
     """The dubbed channel's next free time (dub_times every day), never before the English episode."""
     s = app_settings()
     tz = ZoneInfo(s.get("timezone") or "UTC")
-    taken = {str((e or {}).get("publish_at"))[:16] for r in rows for e in (r.get("editions") or {}).values() if isinstance(e, dict)}
+    taken = {str((e or {}).get("publish_at"))[:16] for r in rows for e in (r.get("editions") or {}).values() if isinstance(e, dict)} | \
+        {str(((e or {}).get("short") or {}).get("publish_at"))[:16] for r in rows for e in (r.get("editions") or {}).values()
+         if isinstance(e, dict)}
     start = max(after, datetime.now(timezone.utc)) + timedelta(hours=1)
     for d in range(200):
         for tm in sorted(s.get("dub_times") or ["09:00", "17:00"]):
@@ -217,6 +219,10 @@ def make(eid: str, lang: str, picture: Path | None = None, log=print) -> dict:
             youtube.add_to_playlist(youtube.ensure_playlist(meta["playlist"], meta["playlist"], token()), res["id"], token())
         except Exception as e:  # noqa: BLE001  (a playlist is a bonus)
             log(f"Dub playlist: {str(e)[:120]}")
+        try:                                                    # its Short goes out later, after the dub
+            ed = make_short(get_db().get("episodes", eid), lang, video, script, work, log) or ed
+        except Exception as e:  # noqa: BLE001  (a Short is a bonus: the dub itself is out)
+            log(f"{languages.name(lang)} dub Short not cut: {str(e)[:200]}")
         return ed
     except Exception as e:  # noqa: BLE001
         if "exceeded the number of videos" in str(e):      # the channel's daily upload cap, not this dub's fault
@@ -275,6 +281,8 @@ def run(budget_s: float = 3600) -> list[str]:
             break
         ed = make(eid, lang, log=lambda m, e=eid: log(m, ep=e) if "dub" in m.lower() else None)
         done.append(f"{eid}:{lang}:{ed['status']}")
+    if time.time() - t0 < budget_s and not paused():
+        done += upload_shorts(budget_s - (time.time() - t0), lambda m: log(m))
     return done
 
 
@@ -307,6 +315,14 @@ def items(rows: list[dict], s: dict | None = None) -> list[dict]:
                 "likes": (ed.get("stats") or {}).get("likes"), "error": ed.get("error"), "tries": ed.get("tries"),
                 "progress": {"stage": "dubbing", "pct": 50} if st == "rendering" else None,
                 "parent_live_at": (live_at(e) or datetime.now(timezone.utc)).isoformat(timespec="seconds")})
+            sh = ed.get("short") or {}
+            if sh:                                           # its Short, also on the dubbed channel
+                up = sh.get("status") == "published"
+                out.append({**out[-1], "id": f"{e['id']}-{lg}-short", "kind": "short", "title": sh.get("title") or out[-1]["title"],
+                            "status": "published" if up else "approved", "publish_at": sh.get("publish_at") or ed.get("publish_at"),
+                            "published_at": sh.get("publish_at") if up else None, "duration": sh.get("duration"),
+                            "youtube": sh.get("youtube"), "url": (sh.get("youtube") or {}).get("url"), "error": sh.get("error"),
+                            "views": (sh.get("stats") or {}).get("views"), "progress": None})
     return out
 
 
@@ -330,6 +346,93 @@ def refresh_stats() -> int:
                 n += 1
         db.update("episodes", e["id"], {"editions": eds})
     return n
+
+
+# ---------------------------------------------------------------- Shorts on the dubbed channel
+# Title patterns and hashtags the big kids channels in each language use on their Shorts (research, Nov 2026)
+SING = {"es": "¡Canta con nosotros!", "pt": "Cante Junto!", "hi": "गाओ साथ में!", "id": "Ayo Nyanyi Bersama!",
+        "fr": "Chante avec nous !", "ar": "غنِّ معنا!", "de": "Sing mit!", "it": "Canta con noi!", "ta": "சேர்ந்து பாடு!",
+        "bn": "একসাথে গাই!", "fil": "Kumanta Tayo!", "vi": "Hát cùng nhé!", "th": "ร้องไปด้วยกัน!", "tr": "Birlikte Söyle!"}
+
+
+TAGS = {"es": "#cancionesinfantiles #paraniños", "hi": "#HindiRhymes #KidsSongs", "id": "#laguanak #laguanakanak",
+        "pt": "#musicainfantil #desenhoinfantil", "fr": "#comptines #chansonspourenfants", "ar": "#اغاني_اطفال"}
+SHORT_MAX = 40.0       # songs work best short (15-30 s guidance); a chorus and a verse fit in 40 s
+
+
+def short_cut(ep: dict, script: dict) -> tuple[float, float, str]:
+    """Where the dubbed Short comes from (the song, else the liveliest segment) and its caption: the chorus line in
+    the dub's language. Scripts without Latin letters get no caption (the caption font can't draw them)."""
+    from .kids import writer
+    from .pipeline import _short_cuts
+    start, end, _ = _short_cuts(ep)[0]
+    end = min(end, start + SHORT_MAX)
+    line = next((c["text"] for c in writer.chorus(script)), "")
+    cap = "" if script.get("language") in languages.NON_LATIN else line
+    return start, end, cap
+
+
+def make_short(ep: dict, lang: str, video: Path, script: dict, work: Path, log=print) -> dict | None:
+    """Cut the dub's Short and keep it in storage until upload_shorts() sends it (after the dub, within the daily limit)."""
+    from .render import episode as epr
+    if not app_settings().get("dub_shorts", True):
+        return None
+    start, end, cap = short_cut(ep, script)
+    out = epr.cut_short(video, max(0, start), end, work / f"short-{lang}.mp4", cap)
+    url = storage.put(out, f"{ep['id']}/dub-short-{lang}-{int(time.time())}.mp4", "video/mp4")
+    title = (re.sub(r"\s*[|:].*$", "", (_title_of(ep, lang) or "")).strip()[:55] + f" 🎵 {SING.get(lang, '🎵')} #shorts").strip()
+    ed = _save(ep["id"], lang, {"short": {"status": "planned", "video_url": url, "title": title[:100],
+                                          "duration": round(end - start, 1)}})
+    log(f"{languages.name(lang)} Short cut for the dubbed channel ({end - start:.0f}s)")
+    return ed
+
+
+def _title_of(ep: dict, lang: str) -> str:
+    ed = (ep.get("editions") or {}).get(lang) or {}
+    return ed.get("title") or ((ep.get("meta") or {}).get("localizations") or {}).get(lang, {}).get("title") or ""
+
+
+def upload_shorts(budget_s: float = 600, log=print) -> list[str]:
+    """Send the stored dub Shorts to the dubbed channel: each after its language's dub, in the next free slot."""
+    from .publish import youtube
+    if not token() or paused():
+        return []
+    db, done, t0 = get_db(), [], time.time()
+    rows = db.query("episodes", in_={"status": ["approved", "published"]}, limit=300, light=True)
+    for e in rows:
+        for lg, ed in (e.get("editions") or {}).items():
+            sh = (ed or {}).get("short") if isinstance(ed, dict) else None
+            if not sh or sh.get("status") != "planned" or ed.get("status") != "published" or time.time() - t0 > budget_s:
+                continue
+            work = config.WORK_DIR / f"dubshort-{e['id']}-{lg}"
+            work.mkdir(parents=True, exist_ok=True)
+            try:
+                f = storage.fetch(sh["video_url"])
+                after = _parse(ed.get("publish_at")) or datetime.now(timezone.utc)
+                when = next_slot(db.query("episodes", in_={"status": ["approved", "published"]}, limit=500, light=True),
+                                 after + timedelta(hours=12))
+                desc = (f"{SING.get(lg, '')} 🎵\n\n{(ed.get('youtube') or {}).get('url', '')}\n\n"
+                        f"{languages.LANGS[lg][1]} · {channel_name()}\n\n{TAGS.get(lg, '')} #HoppyHopHop #shorts").strip()
+                s = app_settings()
+                mfk = s.get("dub_shorts_made_for_kids")
+                res = youtube.upload(f, sh["title"], desc, ["shorts", languages.name(lg)] + list((e.get("meta") or {}).get("tags") or [])[:8],
+                                     "private", None, lg, None, token(), "10", short=True,
+                                     made_for_kids=bool(s.get("shorts_made_for_kids", False) if mfk is None else mfk),
+                                     synthetic=bool(s.get("ai_disclosure")), publish_at=when.replace("+00:00", "Z"))
+                _save(e["id"], lg, {"short": {**sh, "status": "published", "youtube": res, "publish_at": when}})
+                storage.remove([k for k in [__import__("app.janitor", fromlist=["key_of"]).key_of(sh["video_url"])] if k])
+                log(f"{languages.name(lg)} Short uploaded to the dubbed channel, public at {when}: {res['url']}")
+                done.append(f"{e['id']}:{lg}:short")
+            except Exception as ex:  # noqa: BLE001
+                if "exceeded the number of videos" in str(ex):
+                    db.set_setting("dub_paused_until", time.time() + LIMIT_PAUSE_H * 3600)
+                    log("Dub Shorts wait: YouTube's daily upload limit for the dubbed channel was reached")
+                    return done
+                _save(e["id"], lg, {"short": {**sh, "error": str(ex)[:200]}})
+                log(f"{languages.name(lg)} dub Short not uploaded: {str(ex)[:200]}")
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
+    return done
 
 
 def status() -> dict:

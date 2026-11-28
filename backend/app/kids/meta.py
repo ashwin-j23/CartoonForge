@@ -214,17 +214,22 @@ def translate_script(script: dict, lang: str, seconds: list[list[float]] | None 
                f"{seconds[si]}. Say the same thing shorter when the language needs more words. Keep the characters' names. "
                "Write numbers as words.\n") if seconds else ""
         cards = [(i, sc["card"]) for i, sc in enumerate(seg["scenes"]) if sc.get("card")]
-        data, _ = complete_json(
-            "You translate children's TV scripts for dubbing. Keep it simple, warm and natural for a "
-            f"{psychology.band(script['age_band'])['ages']}-year-old native speaker; songs must rhyme and keep "
-            "short lines. Keep the same number of lines. JSON only.",
-            f"Language: {languages.name(lang)}.\nSegment kind: {seg['kind']}. Segment title: {seg['title']}\nLINES: {lines}\n"
-            f"CARD TEXTS: {[{**c, 'i': i} for i, c in cards]}\n{fit}"
-            "Return {\"title\": str, \"lines\": [same count], \"cards\": [{\"i\": int, \"text\": str, \"word\": str}]}",
-            temperature=0.3, max_tokens=4000)
-        new = data.get("lines") or []
-        if len(new) != len(lines):
-            raise ValueError(f"translation of '{seg['title']}' returned {len(new)} lines, expected {len(lines)}")
+        for attempt in range(3):                      # a model sometimes merges the lines: ask again
+            data, _ = complete_json(
+                "You translate children's TV scripts for dubbing. Keep it simple, warm and natural for a "
+                f"{psychology.band(script['age_band'])['ages']}-year-old native speaker; songs must rhyme and keep "
+                "short lines. Keep the same number of lines. JSON only.",
+                f"Language: {languages.name(lang)}.\nSegment kind: {seg['kind']}. Segment title: {seg['title']}\nLINES: {lines}\n"
+                f"CARD TEXTS: {[{**c, 'i': i} for i, c in cards]}\n{fit}"
+                "Return {\"title\": str, \"lines\": [same count], \"cards\": [{\"i\": int, \"text\": str, \"word\": str}]}",
+                temperature=0.3, max_tokens=4000)
+            if isinstance(data, list):                 # some models answer with the bare list of lines
+                data = {"lines": data}
+            new = data.get("lines") or []
+            if len(new) == len(lines):
+                break
+            if attempt == 2:
+                raise ValueError(f"translation of '{seg['title']}' returned {len(new)} lines, expected {len(lines)}")
         seg["title"] = str(data.get("title") or seg["title"])[:40]
         for sc, t in zip(seg["scenes"], new):
             sc["text"] = str(t)
