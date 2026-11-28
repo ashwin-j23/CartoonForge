@@ -696,6 +696,11 @@ def refresh_analytics() -> dict:
             p = perf.setdefault(e["category"], {"sum": 0.0, "n": 0})
             p["sum"] += st["avg_pct"]
             p["n"] += 1
+    try:
+        from . import dubs
+        dubs.refresh_stats()
+    except Exception as e:  # noqa: BLE001
+        log(f"Dubbed channel stats not read: {str(e)[:150]}", "warn")
     db.set_setting("category_perf", {k: {"avg_pct": v["sum"] / v["n"], "n": v["n"]} for k, v in perf.items()})
     # reinforcement: re-score the variants, then learn which segment kinds hold children (retention curves)
     from .kids import optimizer

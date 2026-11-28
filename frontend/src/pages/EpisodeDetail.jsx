@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ApiError, authedUrl, del, mediaUrl, patch, post } from '../api'
 import ScriptView from '../components/ScriptView'
 import Scorecard from '../components/Scorecard'
 import { KindBadge } from '../components/EpisodeCard'
+import { ChannelBadge } from '../components/channel'
 import Icon from '../components/icons'
 import { AnimationBadge, AnimationPicker, EstimateBox, MODE_MAP, PaletteBadge, PalettePicker, StyleBadge, StylePicker, useAIVideo, usePalettes, useStyles } from '../components/looks'
 import {
-  ago, Badge, Empty, Field, fmtDate, fmtDur, fmtUsd, Modal, Progress, SafeImg, Seg, Skeleton, Spinner, shownStatus, StatusPill, Tabs, TagInput,
+  ago, Badge, Empty, Field, fmtDate, fmtDur, fmtNum, fmtUsd, Modal, Progress, SafeImg, Seg, Skeleton, Spinner, shownStatus, StatusPill, Tabs, TagInput,
   toLocalInput, useAction, useApi, useCategoryMap, useStatic, useToast,
 } from '../components/ui'
 
@@ -229,6 +230,10 @@ function LogTab({ log }) {
 /* --------------------------------------------------------------- page */
 export default function EpisodeDetail() {
   const { id } = useParams()
+  const [qs] = useSearchParams()
+  const focusDub = qs.get('dub')
+  const dubRef = useRef(null)
+  useEffect(() => { if (focusDub) setTimeout(() => dubRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400) }, [focusDub])
   const nav = useNavigate()
   const toast = useToast()
   const { data: ep, setData, loading, error, reload } = useApi(`/episodes/${id}`, {
@@ -274,6 +279,7 @@ export default function EpisodeDetail() {
           <h1>{title}</h1>
           <div className="head-meta">
             <StatusPill status={shownStatus(ep)} />
+            {(ep.kind || 'episode') !== 'dub' && <ChannelBadge it={{ channel: 'en' }} full size="lg" />}
             <KindBadge kind={ep.kind} />
             {cat && <Badge>{cat.emoji} {cat.name}</Badge>}
             <Badge icon="smile">{band?.label || ep.age_band}</Badge>
@@ -341,21 +347,62 @@ export default function EpisodeDetail() {
             </section>
           )}
 
-          {editions.length > 0 && (
-            <section className="card">
-              <h3><Icon name="globe" size={16} />Editions</h3>
-              <ul className="mini-list">
-                {editions.map(([code, e]) => (
-                  <li key={code}>
-                    <b>{langs?.find((l) => l.code === code)?.name || code}</b>
-                    <span className="row">
-                      <StatusPill status={shownStatus(e)} small />
-                      {e.video_url && <a href={mediaUrl(e.video_url)} target="_blank" rel="noreferrer" className="link-sm">Video</a>}
-                      {e.youtube?.url && <a href={e.youtube.url} target="_blank" rel="noreferrer" className="link-sm">YouTube</a>}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+          {(ep.kind || 'episode') === 'episode' && (
+            <section className="card dub-card" ref={dubRef}>
+              <h3><Icon name="tv" size={16} />Where it goes</h3>
+              <div className={`dub-row-en ch-panel`}>
+                <div className="row between wrap-row">
+                  <ChannelBadge it={{ channel: 'en' }} full />
+                  <span className="row">
+                    <StatusPill status={shownStatus(ep)} small />
+                    {ep.youtube?.url && <a href={ep.youtube.url} target="_blank" rel="noreferrer" className="link-sm">YouTube<Icon name="external" size={12} /></a>}
+                  </span>
+                </div>
+                <p className="muted small">{ep.status === 'published' ? (new Date(ep.published_at) > new Date() ? `Goes live ${fmtDate(ep.published_at)}` : `Live since ${fmtDate(ep.published_at)}`)
+                  : ep.publish_at && ep.status === 'approved' ? `Scheduled for ${fmtDate(ep.publish_at)}` : 'English original'}</p>
+              </div>
+              <div className="dub-head row between">
+                <ChannelBadge it={{ channel: 'world' }} full />
+                <span className="muted tiny">dubbed on this picture, after the English one</span>
+              </div>
+              {(() => {
+                const want = [...new Set([...(settings?.editions || []), ...editions.map(([c]) => c)])].filter((c) => c !== 'en')
+                if (!want.length) return <p className="muted small">No dub languages chosen (Channel page).</p>
+                return (
+                  <ul className="dub-list">
+                    {want.map((code) => {
+                      const e = ep.editions?.[code] || {}
+                      const l = langs?.find((x) => x.code === code)
+                      const st = e.status || 'waiting'
+                      const later = e.publish_at && new Date(e.publish_at) > new Date()
+                      return (
+                        <li key={code} className={focusDub === code ? 'focus' : ''}>
+                          <ChannelBadge it={{ channel: 'world', lang: code, lang_name: l?.name }} />
+                          <span className="grow">
+                            <b>{e.title || `${l?.native || code} · ${l?.name || ''}`}</b>
+                            <span className="muted tiny">
+                              {st === 'published' ? `${later ? 'Goes live' : 'Live since'} ${fmtDate(e.publish_at)}${e.stats?.views != null ? ` · ${fmtNum(e.stats.views)} views` : ''}`
+                                : st === 'rendering' ? 'Dubbing now…'
+                                : st === 'failed' ? `Failed after ${e.tries || 3} tries: ${e.error || ''}`
+                                : e.error ? `Will try again: ${e.error}` : 'Queued: dubbed up to 3 days before the English one goes live'}
+                            </span>
+                          </span>
+                          <span className="row">
+                            <StatusPill status={st === 'published' ? (later ? 'upcoming' : 'published') : st === 'failed' ? 'failed' : st === 'rendering' ? 'rendering' : 'scripted'} small />
+                            {e.youtube?.url && <a href={e.youtube.url} target="_blank" rel="noreferrer" className="link-sm">YouTube<Icon name="external" size={12} /></a>}
+                            {st !== 'published' && st !== 'rendering' && (
+                              <button className="btn sm" disabled={!!busy}
+                                onClick={() => act(`dub-${code}`, () => post(`/episodes/${ep.id}/edition`, { lang: code }), `${l?.name || code} dub queued`)}>
+                                <Icon name="refresh" size={13} />{e.error || st === 'failed' ? 'Dub again' : 'Dub now'}
+                              </button>
+                            )}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )
+              })()}
             </section>
           )}
 

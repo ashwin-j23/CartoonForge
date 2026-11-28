@@ -1666,3 +1666,49 @@ a.eps-tr:hover { background: var(--surface-2); }
 .cat-skel { height: 499px; border-radius: 14px; }
 .checklist-skel { height: 670px; border-radius: 10px; margin-top: 10px; }
 @media (max-width: 720px) { .cat-skel { height: 882px; } .checklist-skel { height: 870px; } }
+
+/* ---------------------------------------------------------------- two channels: English (green) + World (purple) */
+:root { --ch-en: var(--green); --ch-en-soft: var(--green-soft); --ch-en-text: var(--green-text);
+        --ch-world: var(--violet); --ch-world-soft: var(--violet-soft); --ch-world-text: var(--violet-text); }
+.ch-switch { display: flex; flex-direction: column; gap: 4px; margin: 0 var(--s-3) var(--s-3); padding: 6px; border-radius: 12px; background: var(--surface-2, var(--bg)); border: 1px solid var(--border); }
+.ch-switch-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); padding: 2px 6px; }
+.ch-switch.compact { flex-direction: row; margin: 0; padding: 3px; gap: 2px; }
+.ch-opt { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 13.5px; font-weight: 600; text-align: left; padding: 7px 10px; border-radius: 8px; cursor: pointer; min-height: 34px; }
+.ch-switch.compact .ch-opt { padding: 5px 9px; font-size: 12.5px; min-height: 30px; }
+.ch-opt:hover { background: var(--surface, #fff); color: var(--text); }
+.ch-opt.on { background: var(--surface, #fff); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.ch-opt.en.on { box-shadow: inset 3px 0 0 var(--ch-en), 0 1px 3px rgba(0,0,0,.12); color: var(--ch-en-text); }
+.ch-opt.world.on { box-shadow: inset 3px 0 0 var(--ch-world), 0 1px 3px rgba(0,0,0,.12); color: var(--ch-world-text); }
+.ch-switch.compact .ch-opt.on { box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.ch-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; line-height: 1.5; white-space: nowrap; }
+.ch-badge.en { background: var(--ch-en-soft); color: var(--ch-en-text); }
+.ch-badge.world { background: var(--ch-world-soft); color: var(--ch-world-text); }
+.ch-badge.lg { font-size: 13px; padding: 4px 11px; }
+.ch-badge.on-media { position: absolute; left: 8px; bottom: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.25); background: var(--surface); }
+.ch-edge-world { box-shadow: inset 4px 0 0 var(--ch-world); }
+.ch-edge-en { box-shadow: inset 4px 0 0 var(--ch-en); }
+.topbar .ch-switch { display: none; }
+.ch-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--s-4); }
+.ch-panel { border-top: 4px solid var(--ch-en); }
+.ch-panel.world { border-top-color: var(--ch-world); }
+.ch-panel h2 { display: flex; align-items: center; gap: 8px; }
+.ch-panel .ch-nums { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 6px; }
+.ch-panel .ch-nums span b { font-size: 18px; margin-right: 4px; }
+.dub-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dub-list li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: var(--ch-world-soft); }
+.dub-list li.focus { outline: 2px solid var(--ch-world); }
+.dub-list .grow { min-width: 0; flex: 1 1 180px; }
+.dub-list .grow b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sch-mev.world-ch { border-left: 3px solid var(--ch-world); }
+.sch-item.ch-world .sch-card { box-shadow: inset 4px 0 0 var(--ch-world); }
+.eps-card.ch-world { box-shadow: inset 0 4px 0 var(--ch-world); }
+@media (max-width: 900px) { .topbar .ch-switch { display: flex; } }
+.next-pub-pair { display: grid; gap: 8px; position: relative; z-index: 1; }
+.next-pub-pair .next-pub { min-height: 0; }
+.ch-panel h2 .ch-thumb { width: 30px; height: 30px; }
+.ch-panel .row { gap: 8px; flex-wrap: wrap; }
+.dub-row-en { border-top: 0; box-shadow: inset 4px 0 0 var(--ch-en); padding: 10px 12px; border-radius: 10px; background: var(--ch-en-soft); margin-bottom: var(--s-3); }
+.dub-row-en p { margin: 4px 0 0; }
+.dub-head { margin: 0 0 8px; gap: 8px; flex-wrap: wrap; }
+.hero-sprites.hide { display: none; }
+.eps-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -6px 0 12px; }

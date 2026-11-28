@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { mediaUrl } from '../api'
+import { ChannelBadge, chOf, itemLink } from './channel'
 import Icon from './icons'
 import { AnimationBadge } from './looks'
 import { ago, Badge, fmtDate, fmtDur, Progress, SafeImg, ScoreBadge, shownStatus, StatusPill } from './ui'
@@ -15,6 +16,7 @@ export function KindBadge({ kind }) {
   if (!kind || kind === 'episode') return null
   if (kind === 'short') return <Badge tone="pink" icon="phone" size="sm">Short</Badge>
   if (kind === 'compilation') return <Badge tone="blue" icon="layers" size="sm">Compilation</Badge>
+  if (kind === 'dub') return null
   return <Badge size="sm">{kind}</Badge>
 }
 
@@ -28,7 +30,7 @@ export function MiniCard({ ep, catEmoji, bar, onRetry, retrying }) {
   const failed = ['failed', 'rejected'].includes(ep.status)
   const renderFail = /^render/i.test(ep.error || '')
   return (
-    <Link to={`/episodes/${ep.id}`} className={`mini-card ${failed ? 'is-failed' : ''}`}>
+    <Link to={itemLink(ep)} className={`mini-card ${failed ? 'is-failed' : ''} ch-edge-${chOf(ep)}`}>
       <div className="mini-thumb">
         <Thumb ep={ep} emoji={catEmoji} />
         {ep.duration ? <span className="dur">{fmtDur(ep.duration)}</span> : null}
@@ -36,6 +38,7 @@ export function MiniCard({ ep, catEmoji, bar, onRetry, retrying }) {
       <div className="mini-body">
         <div className="mini-title">{epTitle(ep)}</div>
         <div className="mini-meta">
+          <ChannelBadge it={ep} />
           <KindBadge kind={ep.kind} />
           <ScoreBadge score={ep.score} bar={bar} />
           {ep.publish_at && ['approved', 'publishing', 'upcoming'].includes(shownStatus(ep))
@@ -61,12 +64,13 @@ export function MiniCard({ ep, catEmoji, bar, onRetry, retrying }) {
 export function EpisodeCard({ ep, cat, bar }) {
   const p = ep.progress
   return (
-    <Link to={`/episodes/${ep.id}`} className="ep-card">
+    <Link to={itemLink(ep)} className={`ep-card ch-${chOf(ep)}`}>
       <div className="ep-thumb">
         <Thumb ep={ep} emoji={cat?.emoji} />
         <span className="ep-status"><StatusPill status={shownStatus(ep)} small /></span>
         {ep.duration ? <span className="dur">{fmtDur(ep.duration)}</span> : null}
         {ep.video_url && <span className="ep-play" aria-hidden="true"><Icon name="play" size={18} /></span>}
+        <ChannelBadge it={ep} size="on-media" />
       </div>
       <div className="ep-body">
         <div className="ep-title">{epTitle(ep)}</div>

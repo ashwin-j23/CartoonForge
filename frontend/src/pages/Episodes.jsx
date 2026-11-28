@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { post } from '../api'
+import { ChannelBadge, chOf, CHANNELS, inChannel, itemLink, useChannel } from '../components/channel'
 import { Thumb } from '../components/EpisodeCard'
 import Icon from '../components/icons'
 import { goLiveAt, StageChip, STAGES, stageOf } from '../components/stage'
@@ -29,7 +30,7 @@ const SECTIONS = [
 // old links (?status=…) from Home and elsewhere
 const LEGACY = { review: 'review', failed: 'failed', rejected: 'rejected', published: 'live', approved: 'scheduled', publishing: 'scheduled',
   planned: 'production', writing: 'production', scripted: 'production', rendering: 'production' }
-const KINDS = [['', 'All'], ['episode', 'Episodes'], ['short', 'Shorts'], ['compilation', 'Compilations']]
+const KINDS = [['', 'All'], ['episode', 'Episodes'], ['short', 'Shorts'], ['compilation', 'Compilations'], ['dub', 'Dubs']]
 const SORTS = [['smart', 'Best order'], ['newest', 'Newest'], ['views', 'Most views']]
 const LIVE_PREVIEW = 8
 const SOON = ['scheduled', 'uploading', 'upcoming']
@@ -54,7 +55,8 @@ export default function Episodes() {
   const [q, setQ] = useState('')
   const [showAllLive, setShowAllLive] = useState(false)
   const [busy, run] = useAction()
-  const { data, loading, reload } = useApi('/episodes', { ms: (d) => (Array.isArray(d) && d.some(isLive) ? 5000 : 30000) })
+  const [channel] = useChannel()
+  const { data, loading, reload } = useApi('/episodes?channel=all', { ms: (d) => (Array.isArray(d) && d.some(isLive) ? 5000 : 30000) })
   const [, catMap] = useCategoryMap()
   const bar = useApi('/settings', { quiet: true }).data?.quality_bar
 
@@ -65,11 +67,15 @@ export default function Episodes() {
     setParams(n, { replace: true })
   }
 
-  const all = useMemo(() => (Array.isArray(data) ? data : []).map((e) => ({ ...e, _stage: stageOf(e) })), [data])
+  // a dub that isn't made yet only shows on the World view (on "All" it would bury the English pipeline)
+  const queuedDub = (e) => e.kind === 'dub' && e.status === 'scripted' && !e.error
+  const all = useMemo(() => (Array.isArray(data) ? data : []).filter((e) => inChannel(e, channel) && !(channel === 'all' && queuedDub(e)))
+    .map((e) => ({ ...e, _stage: stageOf(e) })), [data, channel])
+  const hiddenDubs = channel === 'all' ? (Array.isArray(data) ? data : []).filter(queuedDub).length : 0
   const base = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return all.filter((e) => (!kind || (e.kind || 'episode') === kind)
-      && (!needle || [e.title, e.topic, e.category, String(e.id)].some((x) => x && String(x).toLowerCase().includes(needle))))
+      && (!needle || [e.title, e.topic, e.category, String(e.id), e.lang_name, e.lang].some((x) => x && String(x).toLowerCase().includes(needle))))
   }, [all, q, kind])
   const counts = useMemo(() => {
     const c = { all: base.length }
@@ -80,11 +86,14 @@ export default function Episodes() {
     : sort === 'newest' ? [...list].sort((a, b) => ts(b.created_at) - ts(a.created_at)) : smartSort(list))
 
   const retry = async (ep, how) => {
-    const r = await run(`retry-${ep.id}`, () => post(`/episodes/${ep.id}/${how}`), how === 'render' ? 'Rendering again' : 'Writing it again')
+    const r = chOf(ep) === 'world'
+      ? await run(`retry-${ep.id}`, () => post(`/episodes/${ep.episode_id}/edition`, { lang: ep.lang }), `${ep.lang_name} dub queued again`)
+      : await run(`retry-${ep.id}`, () => post(`/episodes/${ep.id}/${how}`), how === 'render' ? 'Rendering again' : 'Writing it again')
     if (r) reload()
   }
   const live = all.filter((e) => e._stage === 'live')
-  const liveEps = live.filter((e) => (e.kind || 'episode') !== 'short').length
+  const liveEps = live.filter((e) => !['short', 'dub'].includes(e.kind || 'episode')).length
+  const liveDubs = live.filter((e) => e.kind === 'dub').length
   const totalViews = live.reduce((n, e) => n + (e.views || 0), 0)
   const next = all.filter((e) => SOON.includes(e._stage) && goLiveAt(e)).sort((a, b) => ts(goLiveAt(a)) - ts(goLiveAt(b)))[0]
   const waiting = all.filter((e) => SOON.includes(e._stage)).length
@@ -96,7 +105,10 @@ export default function Episodes() {
 
   return (
     <div className="page">
-      <PageHead title="Episodes" sub="Everything the studio has made, from first draft to live on YouTube.">
+      <PageHead title={channel === 'all' ? 'Episodes' : `Episodes · ${CHANNELS[channel].label}`}
+        sub={channel === 'world' ? 'Dubs on Hoppy Hop Hop World: one row per language, made from the English episode.'
+          : channel === 'en' ? 'Everything on the English channel, from first draft to live on YouTube.'
+          : 'Both channels. The badge on each video says where it goes: 🐸 English or 🌍 World.'}>
         <Link to="/calendar" className="btn"><Icon name="calendar" size={16} />Schedule</Link>
         <Link to="/create" className="btn primary"><Icon name="plus" size={16} />New episode</Link>
       </PageHead>
@@ -112,7 +124,7 @@ export default function Episodes() {
         <div className="eps-hero">
           <button type="button" className="eps-hero-item st-live" onClick={() => setParam('tab', 'live')}>
             <span className="eps-hero-ico"><Icon name="checkCircle" size={18} /></span>
-            <span><b>{live.length}</b><small>live · {liveEps} episodes, {live.length - liveEps} Shorts</small></span>
+            <span><b>{live.length}</b><small>{channel === 'world' ? `dubs live in ${new Set(live.map((e) => e.lang)).size} languages` : `live · ${liveEps} episodes, ${live.length - liveEps - liveDubs} Shorts${liveDubs ? `, ${liveDubs} dubs` : ''}`}</small></span>
           </button>
           <button type="button" className="eps-hero-item st-live" onClick={() => setParams({ tab: 'live', sort: 'views', ...(kind ? { kind } : {}) }, { replace: true })}>
             <span className="eps-hero-ico"><Icon name="eye" size={18} /></span>
@@ -139,6 +151,9 @@ export default function Episodes() {
         ))}
       </nav>
 
+      {hiddenDubs > 0 && (
+        <p className="muted small eps-note"><span className="ch-badge world">🌍</span> {hiddenDubs} dub{hiddenDubs === 1 ? '' : 's'} waiting to be made are hidden here: switch the channel to <b>Hoppy Hop Hop World</b> to see them.</p>
+      )}
       <div className="eps-toolbar">
         <label className="search-box">
           <Icon name="search" size={16} />
@@ -162,7 +177,8 @@ export default function Episodes() {
           {q ? 'Try a different word, or clear the search.' : 'They show up here as soon as the planner queues them.'}
         </Empty>
       ) : tab === 'all' ? (
-        SECTIONS.map(([id, title, hint, stages]) => {
+        SECTIONS.map(([id, title0, hint0, stages]) => {
+          const [title, hint] = channel === 'world' && id === 'production' ? ['Waiting to be dubbed', 'Each language is dubbed up to 3 days before the English episode goes live.'] : [title0, hint0]
           const full = sorted(base.filter((e) => stages.includes(e._stage)))
           if (!full.length) return null
           const more = id === 'live' && !showAllLive && full.length > LIVE_PREVIEW ? full.length - LIVE_PREVIEW : 0
@@ -228,7 +244,7 @@ function Status({ ep, bar, onRetry, busy }) {
     const p = ep.progress
     return p && p.pct != null && p.pct < 100
       ? <Progress pct={p.pct} label={p.stage} tone="violet" />
-      : <div className="eps-status"><span className="eps-faint"><Icon name="clock" size={12} /> {ep.status === 'planned' ? 'Queued' : ep.status === 'scripted' ? 'Script ready, rendering next' : 'Working on it…'}</span></div>
+      : <div className="eps-status"><span className="eps-faint"><Icon name="clock" size={12} /> {ep.kind === 'dub' ? 'Dub queued: made up to 3 days before the English one goes live' : ep.status === 'planned' ? 'Queued' : ep.status === 'scripted' ? 'Script ready, rendering next' : 'Working on it…'}</span></div>
   }
   if (st === 'review') {
     return <div className="eps-status"><ScoreBadge score={ep.score} bar={bar} /><span className="eps-cta">Review now<Icon name="arrowRight" size={13} /></span></div>
@@ -241,7 +257,7 @@ function Status({ ep, bar, onRetry, busy }) {
         {onRetry && (
           <button className="btn sm" disabled={busy === `retry-${ep.id}`}
             onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); onRetry(ep, renderFail ? 'render' : 'rewrite') }}>
-            <Icon name="refresh" size={13} />{renderFail ? 'Render again' : 'Rewrite'}
+            <Icon name="refresh" size={13} />{ep.kind === 'dub' ? 'Dub again' : renderFail ? 'Render again' : 'Rewrite'}
           </button>
         )}
       </div>
@@ -253,7 +269,7 @@ function Status({ ep, bar, onRetry, busy }) {
 function Card({ ep, catMap, ...p }) {
   const cat = catMap[ep.category]
   return (
-    <Link to={`/episodes/${ep.id}`} className={`eps-card st-${ep._stage}`}>
+    <Link to={itemLink(ep)} className={`eps-card st-${ep._stage} ch-${chOf(ep)}`}>
       <div className="eps-media">
         <Thumb ep={ep} emoji={cat?.emoji} />
         <span className="eps-media-chip"><StageChip stage={ep._stage} solid /></span>
@@ -261,12 +277,13 @@ function Card({ ep, catMap, ...p }) {
         {ep.kind === 'compilation' && <span className="eps-kind"><Icon name="layers" size={11} />Compilation</span>}
         {ep.duration ? <span className="dur">{fmtDur(ep.duration)}</span> : null}
         {ep.video_url && <span className="ep-play" aria-hidden="true"><Icon name="play" size={18} /></span>}
+        <ChannelBadge it={ep} size="on-media" />
       </div>
       <div className="eps-body">
         <h3 className="eps-title">{ep.title || ep.topic || `Episode #${ep.id}`}</h3>
         <div className="eps-meta">
-          {cat && <span>{cat.emoji} {cat.name}</span>}
-          {ep.age_band && <span>Ages {ep.age_band}</span>}
+          {chOf(ep) === 'world' ? <span>{ep.lang_native} · {ep.lang_name}</span> : cat && <span>{cat.emoji} {cat.name}</span>}
+          {chOf(ep) !== 'world' && ep.age_band && <span>Ages {ep.age_band}</span>}
         </div>
         <Status ep={ep} {...p} />
       </div>
@@ -279,14 +296,15 @@ function Row({ ep, catMap, bar }) {
   const at = goLiveAt(ep)
   const st = ep._stage
   return (
-    <Link to={`/episodes/${ep.id}`} className={`eps-tr st-${st}`} role="row">
+    <Link to={itemLink(ep)} className={`eps-tr st-${st} ch-edge-${chOf(ep)}`} role="row">
       <span className="eps-row-thumb"><Thumb ep={ep} emoji={cat?.emoji} />{ep.duration ? <span className="dur">{fmtDur(ep.duration)}</span> : null}</span>
       <span className="eps-row-main">
         <b>{ep.title || ep.topic}</b>
         <span className="eps-meta">
+          <ChannelBadge it={ep} />
           {ep.kind === 'short' ? <span className="eps-kind-inline">Short</span> : ep.kind === 'compilation' ? <span className="eps-kind-inline">Compilation</span> : null}
           {cat && <span>{cat.emoji} {cat.name}</span>}
-          <span>#{ep.id}</span>
+          {chOf(ep) === 'world' ? <span>{ep.lang_name}</span> : <span>#{ep.id}</span>}
         </span>
       </span>
       <span className="eps-row-stage"><StageChip stage={st} /></span>

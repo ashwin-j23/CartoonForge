@@ -137,7 +137,15 @@ def dub_meta(ep: dict, lang: str, script: dict | None = None) -> dict:
 
 def channel_name() -> str:
     """The dubbed channel's own name (from YouTube, cached by status()); the English name + ' World' until then."""
-    ch = get_db().get_setting("dub_channel_cache") or {}
+    db = get_db()
+    ch = db.get_setting("dub_channel_cache") or {}
+    if token() and time.time() - float(ch.get("t") or 0) > 6 * 3600:     # renamed on YouTube? read it again
+        try:
+            from .publish import youtube
+            ch = {**youtube.channel_info(token()), "t": time.time()}
+            db.set_setting("dub_channel_cache", ch)
+        except Exception:  # noqa: BLE001
+            pass
     return ch.get("title") or f"{app_settings().get('channel_name', 'Hoppy Hop Hop')} World"
 
 
@@ -256,6 +264,60 @@ def run(budget_s: float = 3600) -> list[str]:
         ed = make(eid, lang, log=lambda m, e=eid: log(m, ep=e) if "dub" in m.lower() else None)
         done.append(f"{eid}:{lang}:{ed['status']}")
     return done
+
+
+_STATUS = {"published": "published", "rendering": "rendering", "failed": "failed", "planned": "scripted"}
+
+
+def items(rows: list[dict], s: dict | None = None) -> list[dict]:
+    """Every dub as its own row for the dashboard (channel 'world'), shaped like an episode summary.
+    Languages still to come on approved/published episodes are listed as queued once the channel is connected."""
+    s = s or app_settings()
+    connected = bool(token())
+    out = []
+    for e in rows:
+        if e.get("kind", "episode") not in (None, "episode") or e.get("edition_of"):
+            continue
+        eds = {lg: ed for lg, ed in (e.get("editions") or {}).items() if isinstance(ed, dict) and lg in languages.LANGS}
+        todo = wanted(e, s) if connected and e.get("status") in ("approved", "published") and not e.get("archived") else []
+        for lg in list(eds) + [lg for lg in todo if lg not in eds]:
+            ed = eds.get(lg) or {}
+            st = _STATUS.get(ed.get("status") or "planned", "scripted")
+            m = e.get("meta") or {}
+            out.append({
+                "id": f"{e['id']}-{lg}", "episode_id": e["id"], "channel": "world", "kind": "dub", "lang": lg,
+                "lang_name": languages.name(lg), "lang_native": languages.LANGS[lg][1],
+                "title": ed.get("title") or m.get("title") or e.get("topic"), "topic": e.get("topic"),
+                "status": st, "publish_at": ed.get("publish_at"), "published_at": ed.get("publish_at") if st == "published" else None,
+                "created_at": e.get("created_at"), "category": e.get("category"), "age_band": e.get("age_band"),
+                "duration": e.get("duration"), "thumb_url": e.get("thumb_url"), "youtube": ed.get("youtube"),
+                "url": (ed.get("youtube") or {}).get("url"), "views": (ed.get("stats") or {}).get("views"),
+                "likes": (ed.get("stats") or {}).get("likes"), "error": ed.get("error"), "tries": ed.get("tries"),
+                "progress": {"stage": "dubbing", "pct": 50} if st == "rendering" else None,
+                "parent_live_at": (live_at(e) or datetime.now(timezone.utc)).isoformat(timespec="seconds")})
+    return out
+
+
+def refresh_stats() -> int:
+    """Views/likes of the dubbed channel's videos, saved on each episode's editions (daily, with the main analytics)."""
+    from .publish import youtube
+    if not token():
+        return 0
+    db = get_db()
+    rows = [e for e in db.query("episodes", in_={"status": ["approved", "published"]}, limit=500, light=True)
+            if any(isinstance(ed, dict) and (ed.get("youtube") or {}).get("id") for ed in (e.get("editions") or {}).values())]
+    ids = [ed["youtube"]["id"] for e in rows for ed in e["editions"].values() if isinstance(ed, dict) and (ed.get("youtube") or {}).get("id")]
+    stats = youtube.video_stats(ids, token()) if ids else {}
+    n = 0
+    for e in rows:
+        eds = dict(e["editions"])
+        for lg, ed in eds.items():
+            vid = (ed.get("youtube") or {}).get("id") if isinstance(ed, dict) else None
+            if vid and vid in stats:
+                eds[lg] = {**ed, "stats": stats[vid]}
+                n += 1
+        db.update("episodes", e["id"], {"editions": eds})
+    return n
 
 
 def status() -> dict:

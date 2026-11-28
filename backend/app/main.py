@@ -211,7 +211,8 @@ def _summary(e: dict) -> dict:
                                    "thumb_url", "video_url", "publish_at", "published_at", "youtube", "progress", "error", "kind",
                                    "parent_id", "edition_of", "art_style", "animation", "rendered_style", "palette", "rendered_palette")} | {
         "title": m.get("title") or e.get("topic"), "score": (e.get("critic") or {}).get("score"),
-        "kind": e.get("kind", "episode"), "views": (e.get("stats") or {}).get("views"),
+        "kind": e.get("kind", "episode"), "channel": "en", "views": (e.get("stats") or {}).get("views"),
+        "dubs": {lg: (ed or {}).get("status") for lg, ed in (e.get("editions") or {}).items() if isinstance(ed, dict)},
         "likes": (e.get("stats") or {}).get("likes")}
 
 
@@ -231,11 +232,14 @@ def _full(e: dict) -> dict:
 
 
 @app.get("/api/episodes", dependencies=[Depends(auth)])
-def list_episodes(status: str | None = None, kind: str | None = None):
+def list_episodes(status: str | None = None, kind: str | None = None, channel: str = "all"):
+    """channel: en = the English channel's videos, world = the dubs on the dubbed channel, all = both (tagged)."""
+    from . import dubs
     rows = get_db().query("episodes", eq={"status": status} if status else None, limit=300, light=True)
-    if kind:
-        rows = [r for r in rows if r.get("kind", "episode") == kind]
-    return [_summary(r) for r in rows]
+    out = [] if channel == "world" else [_summary(r) for r in rows if not kind or r.get("kind", "episode") == kind]
+    if channel in ("world", "all") and kind in (None, "", "dub") and not status:
+        out += dubs.items(rows)
+    return out
 
 
 @app.get("/api/episodes/{eid}", dependencies=[Depends(auth)])
@@ -868,9 +872,25 @@ def overview():
     return {"counts": counts,
             "next_publish": {"id": nxt[0]["id"], "title": (nxt[0].get("meta") or {}).get("title", nxt[0]["topic"]),
                              "publish_at": nxt[0]["publish_at"]} if nxt else None,
-            "channel": channel, "warnings": pipeline.overview_warnings(),
+            "channel": channel, "dub_channel": _dub_overview(rows),
+            "warnings": pipeline.overview_warnings(),
             "worker": {"mode": config.WORKER_MODE, "busy": _busy["v"] or bool(cur), "current": cur or None},
             "settings_summary": {k: s.get(k) for k in ("channel_name", "age_band", "target_minutes", "episodes_per_week", "autopilot")}}
+
+
+def _dub_overview(rows: list[dict]) -> dict:
+    """The dubbed channel at a glance for Home: connection, counts by stage, next dub to go live."""
+    from . import dubs
+    ch = get_db().get_setting("dub_channel_cache") or {}
+    its = dubs.items(rows) if dubs.token() else []
+    now = datetime.now(timezone.utc).isoformat()
+    up = sorted([d for d in its if d["status"] == "published" and (d["publish_at"] or "") > now], key=lambda d: d["publish_at"])
+    return {"connected": bool(dubs.token()), **{k: ch.get(k) for k in ("id", "title", "thumb", "subscribers", "views", "videos")},
+            "languages": app_settings().get("editions") or [],
+            "counts": {"live": sum(1 for d in its if d["status"] == "published" and (d["publish_at"] or "") <= now),
+                       "upcoming": len(up), "queued": sum(1 for d in its if d["status"] in ("scripted", "rendering")),
+                       "failed": sum(1 for d in its if d["status"] == "failed")},
+            "next": ({"id": up[0]["episode_id"], "title": up[0]["title"], "lang": up[0]["lang"], "publish_at": up[0]["publish_at"]} if up else None)}
 
 
 def _sched_state(r: dict, now: str) -> tuple[str, str]:
@@ -904,7 +924,15 @@ def storage_cleanup():
 def calendar():
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rows = get_db().query("episodes", in_={"status": ["approved", "publishing", "published"]}, limit=300, light=True)
+    from . import dubs
     sched = []
+    for d in dubs.items(rows):                      # the dubbed channel: each language its own row
+        if d["status"] == "scripted" and not d.get("error"):
+            continue                                # not dubbed yet: it gets its time when it is made
+        st = {"published": "uploaded" if (d["publish_at"] or "") > now else "live", "failed": "late",
+              "rendering": "uploading"}.get(d["status"], "late")
+        sched.append({**d, "state": st, "publish_at": d["publish_at"] or d["parent_live_at"],
+                      "error": (d.get("error") or "")[:200] if st == "late" else ""})
     for r in rows:
         state, at = _sched_state(r, now)
         if at:
@@ -912,18 +940,22 @@ def calendar():
                           "state": state, "publish_at": at, "kind": r.get("kind", "episode"),
                           "url": (r.get("youtube") or {}).get("url"), "thumb_url": r.get("thumb_url"),
                           "duration": r.get("duration"), "category": r.get("category"),
-                          "views": (r.get("stats") or {}).get("views"),
+                          "views": (r.get("stats") or {}).get("views"), "channel": "en",
                           "error": (r.get("error") or "")[:200] if state == "late" else ""})
-    live = [x for x in sched if x["state"] == "live"]
-    totals = {"episodes": sum(1 for x in live if x["kind"] != "short"), "shorts": sum(1 for x in live if x["kind"] == "short"),
-              "uploaded": sum(1 for x in sched if x["state"] == "uploaded"),
-              "waiting": sum(1 for x in sched if x["state"] in ("waiting", "uploading", "late"))}
+    def totals_for(xs):
+        live = [x for x in xs if x["state"] == "live"]
+        return {"episodes": sum(1 for x in live if x["kind"] not in ("short", "dub")), "shorts": sum(1 for x in live if x["kind"] == "short"),
+                "dubs": sum(1 for x in live if x["kind"] == "dub"), "uploaded": sum(1 for x in xs if x["state"] == "uploaded"),
+                "waiting": sum(1 for x in xs if x["state"] in ("waiting", "uploading", "late"))}
+    totals = {**totals_for(sched), "en": totals_for([x for x in sched if x["channel"] == "en"]),
+              "world": totals_for([x for x in sched if x["channel"] == "world"])}
     return {"scheduled": sched, "world_days": planner.upcoming(60), "slots": pipeline.free_slots(8), "now": now,
             "totals": totals, "storage": get_db().get_setting("storage_usage")}
 
 
 @app.get("/api/analytics", dependencies=[Depends(auth)])
 def analytics():
+    from . import dubs
     rows = get_db().query("episodes", eq={"status": "published"}, limit=500, light=True)
     eps, per = [], {}
     tv = tl = 0
@@ -933,7 +965,7 @@ def analytics():
         tl += st.get("likes", 0)
         eps.append({"id": r["id"], "title": (r.get("meta") or {}).get("title", r.get("topic")), "category": r.get("category"),
                     "kind": r.get("kind", "episode"), "views": st.get("views", 0), "likes": st.get("likes", 0),
-                    "avg_pct": st.get("avg_pct"), "published_at": r.get("published_at"),
+                    "avg_pct": st.get("avg_pct"), "published_at": r.get("published_at"), "channel": "en",
                     "url": (r.get("youtube") or {}).get("url")})
         c = per.setdefault(r.get("category") or "other", {"episodes": 0, "views": 0, "pct": []})
         c["episodes"] += 1
@@ -943,9 +975,24 @@ def analytics():
     cats = [{"id": k, "name": categories.get(k)["name"], "emoji": categories.get(k)["emoji"], "episodes": v["episodes"],
              "views": v["views"], "avg_pct": round(sum(v["pct"]) / len(v["pct"]), 1) if v["pct"] else None}
             for k, v in per.items()]
-    return {"totals": {"views": tv, "likes": tl, "episodes": len(rows)},
+    world = [d for d in dubs.items(rows) if d["status"] == "published"]
+    langs: dict = {}
+    for d in world:
+        lg = langs.setdefault(d["lang"], {"lang": d["lang"], "name": d["lang_name"], "native": d["lang_native"], "videos": 0, "views": 0, "likes": 0})
+        lg["videos"] += 1
+        lg["views"] += d.get("views") or 0
+        lg["likes"] += d.get("likes") or 0
+        eps.append({"id": d["episode_id"], "dub_id": d["id"], "title": d["title"], "category": d["category"], "kind": "dub",
+                    "channel": "world", "lang": d["lang"], "views": d.get("views") or 0, "likes": d.get("likes") or 0,
+                    "avg_pct": None, "published_at": d["publish_at"], "url": d["url"]})
+    wv = sum(x["views"] for x in langs.values())
+    wl = sum(x["likes"] for x in langs.values())
+    return {"totals": {"views": tv + wv, "likes": tl + wl, "episodes": len(rows) + len(world)},
+            "channels": {"en": {"views": tv, "likes": tl, "videos": len(rows)},
+                         "world": {"views": wv, "likes": wl, "videos": len(world)}},
+            "languages": sorted(langs.values(), key=lambda x: -x["views"]),
             "categories": sorted(cats, key=lambda c: -c["views"]),
-            "episodes": sorted(eps, key=lambda e: -e["views"])[:100]}
+            "episodes": sorted(eps, key=lambda e: -e["views"])[:150]}
 
 
 @app.get("/api/growth", dependencies=[Depends(auth)])

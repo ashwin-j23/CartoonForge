@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { mediaUrl, post } from '../api'
+import { ChannelBadge, chOf, CHANNELS, inChannel, itemLink, useChannel } from '../components/channel'
 import Icon from '../components/icons'
 import { StageChip, STAGES, stageOfSlot } from '../components/stage'
 import { ago, Empty, fmtDate, fmtDur, fmtNum, PageHead, Progress, SafeImg, Seg, Skeleton, until, useAction, useApi, useCategoryMap } from '../components/ui'
@@ -38,18 +39,19 @@ function Mini({ it, catMap }) {
 function Item({ it, catMap, past }) {
   const st = it._stage
   return (
-    <li className={`sch-item st-${st}`}>
+    <li className={`sch-item st-${st} ch-${chOf(it)}`}>
       <span className="sch-time">
         {past ? <>{fmtDate(it.publish_at, { month: 'short', day: 'numeric' })}<small>{clock(it.publish_at)}</small></> : clock(it.publish_at)}
       </span>
       <span className="sch-rail" aria-hidden="true"><i /></span>
       <div className="sch-card">
-        <Link to={`/episodes/${it.id}`} className="sch-card-link">
+        <Link to={itemLink(it)} className="sch-card-link">
           <Mini it={it} catMap={catMap} />
           <span className="sch-card-main">
             <b className="sch-title">{it.title}</b>
             <span className="sch-sub">
-              <span className={`sch-kind ${it.kind === 'short' ? 'short' : ''}`}>{it.kind === 'short' ? 'Short' : 'Episode'}</span>
+              <ChannelBadge it={it} />
+              <span className={`sch-kind ${it.kind === 'short' ? 'short' : ''}`}>{it.kind === 'short' ? 'Short' : it.kind === 'dub' ? `Dub · ${it.lang_name}` : 'Episode'}</span>
               {it.duration ? <span>{fmtDur(it.duration)}</span> : null}
               {st === 'live' ? <><span><Icon name="eye" size={12} /> {fmtNum(it.views || 0)} views</span><span>live {ago(it.publish_at)}</span></>
                 : st === 'failed' ? <span className="sch-err" title={it.error}>was due {ago(it.publish_at)}{it.error ? ` · ${it.error}` : ''}</span>
@@ -61,7 +63,7 @@ function Item({ it, catMap, past }) {
           <StageChip stage={st} label={st === 'failed' ? 'Late' : undefined} />
           {it.url
             ? <a className="icon-btn sm" href={it.url} target="_blank" rel="noreferrer" title="Open on YouTube" aria-label="Open on YouTube"><Icon name="external" size={15} /></a>
-            : <span className="sch-noyt" title="Uploads by itself up to 12 hours before its time">not uploaded yet</span>}
+            : <span className="sch-noyt" title={chOf(it) === 'world' ? 'Dubbed and uploaded up to 3 days before the English episode goes live' : 'Uploads by itself up to 12 hours before its time'}>{chOf(it) === 'world' ? 'not dubbed yet' : 'not uploaded yet'}</span>}
         </span>
       </div>
     </li>
@@ -81,6 +83,7 @@ function Slot({ at }) {
 export default function Calendar() {
   useTick()
   const { data, loading, reload } = useApi('/calendar', { ms: 30000 })
+  const [channel] = useChannel()
   const [busy, run] = useAction()
   const [, catMap] = useCategoryMap()
   const [view, setView] = useState('agenda')
@@ -90,8 +93,9 @@ export default function Calendar() {
   const dayRefs = useRef({})
   const today = dayKey(new Date())
 
-  const items = useMemo(() => (data?.scheduled || []).map((it) => ({ ...it, _stage: stageOfSlot(it.state) }))
-    .sort((a, b) => ts(a.publish_at) - ts(b.publish_at)), [data])
+  const items = useMemo(() => (data?.scheduled || []).filter((it) => inChannel(it, channel))
+    .map((it) => ({ ...it, _stage: stageOfSlot(it.state) }))
+    .sort((a, b) => ts(a.publish_at) - ts(b.publish_at)), [data, channel])
   const counts = useMemo(() => {
     const c = {}
     for (const it of items) c[it._stage] = (c[it._stage] || 0) + 1
@@ -106,10 +110,10 @@ export default function Calendar() {
   const days = useMemo(() => {
     const m = {}
     for (const it of upcoming) (m[dayKey(new Date(it.publish_at))] ||= []).push({ type: 'it', at: it.publish_at, it })
-    if (!only) for (const s of (data?.slots || []).slice(0, 3)) (m[dayKey(new Date(s))] ||= []).push({ type: 'slot', at: s })
+    if (!only && channel !== 'world') for (const s of (data?.slots || []).slice(0, 3)) (m[dayKey(new Date(s))] ||= []).push({ type: 'slot', at: s })
     for (const k of Object.keys(m)) m[k].sort((a, b) => ts(a.at) - ts(b.at))
     return Object.entries(m).sort(([a], [b]) => a.localeCompare(b))
-  }, [upcoming, data, only])
+  }, [upcoming, data, only, channel])
 
   // the next 7 days at a glance
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => {
@@ -135,24 +139,26 @@ export default function Calendar() {
 
   const liveAll = items.filter((it) => it._stage === 'live')
   const liveShorts = liveAll.filter((it) => it.kind === 'short').length
+  const liveDubs = liveAll.filter((it) => it.kind === 'dub').length
   const totalViews = liveAll.reduce((n, it) => n + (it.views || 0), 0)
   const worldSoon = (data?.world_days || []).filter((w) => w.date >= today).slice(0, 5)
 
   return (
     <div className="page">
-      <PageHead title="Schedule" sub="When each video goes live on YouTube. Each colour shows where a video stands." />
+      <PageHead title={channel === 'all' ? 'Schedule' : `Schedule · ${CHANNELS[channel].label}`}
+        sub={channel === 'all' ? 'Both channels. The badge says where each video goes: 🐸 English or 🌍 World (dubs, 9:00 and 17:00).' : 'When each video goes live on YouTube. Each colour shows where a video stands.'} />
 
       {loading && !data ? <div className="skel sch-top-skel" aria-busy="true" /> : (
         <div className="sch-top">
           <div className={`sch-next ${next ? `st-${next._stage}` : ''}`}>
             <span className="sch-eyebrow"><Icon name="rocket" size={14} />Next to go live</span>
             {next ? (
-              <Link to={`/episodes/${next.id}`} className="sch-next-body">
+              <Link to={itemLink(next)} className="sch-next-body">
                 <Mini it={next} catMap={catMap} />
                 <span className="sch-next-text">
                   <span className="sch-count">in {until(next.publish_at)}</span>
                   <b>{next.title}</b>
-                  <span className="sch-sub"><span>{fmtDate(next.publish_at)}</span><StageChip stage={next._stage} /></span>
+                  <span className="sch-sub"><ChannelBadge it={next} /><span>{fmtDate(next.publish_at)}</span><StageChip stage={next._stage} /></span>
                 </span>
               </Link>
             ) : <p className="sch-none">Nothing waiting. New episodes take the next open slot as soon as they're approved.</p>}
@@ -160,7 +166,7 @@ export default function Calendar() {
 
           <div className="sch-sum">
             <div className="sch-sum-head">
-              <div><b>{liveAll.length}</b><span>live · {liveAll.length - liveShorts} episodes, {liveShorts} Shorts</span></div>
+              <div><b>{liveAll.length}</b><span>live · {liveAll.length - liveShorts - liveDubs} episodes, {liveShorts} Shorts{liveDubs ? `, ${liveDubs} dubs` : ''}</span></div>
               <div><b>{fmtNum(totalViews)}</b><span>views</span></div>
               <div><b>{items.length - liveAll.length}</b><span>still to go live</span></div>
             </div>
@@ -242,8 +248,8 @@ export default function Calendar() {
                     <div key={k} className={`sch-mcell ${d.getMonth() !== cursor.getMonth() ? 'out' : ''} ${k === today ? 'today' : ''} ${k < today ? 'past' : ''}`} role="gridcell">
                       <span className="sch-mday">{d.getDate()}</span>
                       {its.slice(0, 4).map((x, i) => (x.type === 'it' ? (
-                        <Link key={i} to={`/episodes/${x.it.id}`} className={`sch-mev st-${x.it._stage}`} title={`${label(x.it._stage)} · ${x.it.title} · ${fmtDate(x.it.publish_at)}`}>
-                          <i /><b>{clock(x.it.publish_at)}</b><span>{x.it.kind === 'short' ? '📱 ' : ''}{x.it.title}</span>
+                        <Link key={i} to={itemLink(x.it)} className={`sch-mev st-${x.it._stage} ${chOf(x.it) === 'world' ? 'world-ch' : ''}`} title={`${CHANNELS[chOf(x.it)].label} · ${label(x.it._stage)} · ${x.it.title} · ${fmtDate(x.it.publish_at)}`}>
+                          <i /><b>{clock(x.it.publish_at)}</b><span>{chOf(x.it) === 'world' ? `🌍${(x.it.lang || '').toUpperCase()} ` : x.it.kind === 'short' ? '📱 ' : ''}{x.it.title}</span>
                         </Link>
                       ) : (
                         <span key={i} className="sch-mev world" title={x.w.theme}>{catMap[x.w.category]?.emoji || '🌍'}<span>{x.w.theme}</span></span>
@@ -259,6 +265,8 @@ export default function Calendar() {
           <div className="sch-legend">
             {FILTERS.map((s) => <span key={s}><i className={`st-${s}`} />{label(s)}</span>)}
             {view === 'month' && <span><i className="world" />World day</span>}
+            {channel !== 'en' && <span><span className="ch-badge world">🌍</span>Hoppy Hop Hop World (dubs)</span>}
+            {channel !== 'world' && <span><span className="ch-badge en">🐸</span>Hoppy Hop Hop (English)</span>}
           </div>
         </div>
 
@@ -274,7 +282,7 @@ export default function Calendar() {
           </div>
 
           <div className="card">
-            <h3><Icon name="clock" size={16} />Open slots</h3>
+            <h3><Icon name="clock" size={16} />Open slots <ChannelBadge it={{ channel: 'en' }} /></h3>
             {!data ? <Skeleton h={18} count={4} /> : data.slots?.length ? (
               <ul className="sch-slots">{data.slots.slice(0, 6).map((s) => <li key={s}><b>{fmtDate(s)}</b><span>in {until(s)}</span></li>)}</ul>
             ) : <p className="muted small">No open slots. The schedule is full.</p>}

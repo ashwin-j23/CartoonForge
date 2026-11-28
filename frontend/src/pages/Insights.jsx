@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { post } from '../api'
+import { ChannelBadge, CHANNELS, inChannel, useChannel } from '../components/channel'
 import { EpisodeCard } from '../components/EpisodeCard'
 import Icon from '../components/icons'
 import {
@@ -85,9 +86,13 @@ function Learning() {
 
 function Analytics() {
   const { data, loading } = useApi('/analytics')
+  const [channel] = useChannel()
   const [sort, setSort] = useState('views')
-  const cats = data?.categories || []
-  const eps = data?.episodes || []
+  const cats = channel === 'world' ? [] : data?.categories || []
+  const eps = useMemo(() => (data?.episodes || []).filter((e) => inChannel(e, channel)), [data, channel])
+  const langs = channel === 'en' ? [] : data?.languages || []
+  const tot = channel === 'all' ? { ...data?.totals, videos: data?.totals?.episodes } : data?.channels?.[channel] || {}
+  const maxLang = Math.max(1, ...langs.map((l) => l.views || 0))
   const k = usePctScale([...cats, ...eps])
   const maxViews = Math.max(1, ...cats.map((c) => c.views || 0))
   const sorted = useMemo(() => [...eps].sort((a, b) => (sort === 'recent' ? String(b.published_at).localeCompare(String(a.published_at)) : (b[sort] || 0) - (a[sort] || 0))), [eps, sort])
@@ -97,19 +102,42 @@ function Analytics() {
   return (
     <>
       <section className="stats three">
-        <Stat icon="eye" tone="blue" label="Total views" value={fmtNum(data?.totals?.views)} />
-        <Stat icon="heart" tone="pink" label="Likes" value={fmtNum(data?.totals?.likes)} />
-        <Stat icon="film" tone="green" label="Published episodes" value={fmtNum(data?.totals?.episodes)} />
+        <Stat icon="eye" tone="blue" label={channel === 'all' ? 'Total views · both channels' : `Views · ${CHANNELS[channel].label}`} value={fmtNum(tot.views)}
+          sub={channel === 'all' && data?.channels ? `🐸 ${fmtNum(data.channels.en.views)} · 🌍 ${fmtNum(data.channels.world.views)}` : null} />
+        <Stat icon="heart" tone="pink" label="Likes" value={fmtNum(tot.likes)} />
+        <Stat icon="film" tone="green" label={channel === 'world' ? 'Dubs live' : 'Published videos'} value={fmtNum(tot.videos)}
+          sub={channel === 'all' && data?.channels ? `🐸 ${data.channels.en.videos} · 🌍 ${data.channels.world.videos}` : null} />
       </section>
 
-      <Learning />
+      {langs.length > 0 && (
+        <section className="card flush ch-panel world">
+          <div className="card-head pad"><h2><span aria-hidden="true">🌍</span>Hoppy Hop Hop World · by language</h2><span className="muted small">Views are read from YouTube once a day</span></div>
+          <div className="scroll-x">
+            <table className="table">
+              <thead><tr><th>Language</th><th className="num">Dubs live</th><th>Views</th><th className="num">Likes</th></tr></thead>
+              <tbody>
+                {langs.map((l) => (
+                  <tr key={l.lang}>
+                    <td><b>{l.native}</b> <span className="muted small">{l.name}</span></td>
+                    <td className="num">{l.videos}</td>
+                    <td className="bar-cell"><Bar value={l.views} max={maxLang} tone="violet" /><span>{fmtNum(l.views)}</span></td>
+                    <td className="num">{fmtNum(l.likes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {channel !== 'world' && <Learning />}
 
       {!cats.length && !eps.length ? (
         <Empty icon="chart" title="No numbers yet">Analytics appear once episodes are published and YouTube is connected.</Empty>
       ) : (
         <>
-          <section className="card flush">
-            <div className="card-head pad"><h2>By category</h2><span className="muted small">Average view % is the best signal that kids stayed</span></div>
+          {cats.length > 0 && <section className="card flush">
+            <><div className="card-head pad"><h2>By category <ChannelBadge it={{ channel: 'en' }} /></h2><span className="muted small">Average view % is the best signal that kids stayed</span></div>
             <div className="scroll-x">
               <table className="table">
                 <thead><tr><th>Category</th><th className="num">Episodes</th><th>Views</th><th>Avg view %</th></tr></thead>
@@ -124,24 +152,24 @@ function Analytics() {
                   ))}
                 </tbody>
               </table>
-            </div>
-          </section>
+            </div></>
+          </section>}
 
           <section className="card flush">
             <div className="card-head pad">
-              <h2>Top episodes</h2>
+              <h2>{channel === 'world' ? 'Top dubs' : 'Top videos'}</h2>
               <select value={sort} onChange={(e) => setSort(e.target.value)} className="sm" aria-label="Sort episodes">
                 <option value="views">Most viewed</option><option value="likes">Most liked</option><option value="avg_pct">Best retention</option><option value="recent">Most recent</option>
               </select>
             </div>
             <div className="scroll-x">
               <table className="table">
-                <thead><tr><th>#</th><th>Episode</th><th className="num">Views</th><th className="num">Likes</th><th>Avg view %</th><th>Published</th></tr></thead>
+                <thead><tr><th>#</th><th>Video</th><th className="num">Views</th><th className="num">Likes</th><th>Avg view %</th><th>Published</th></tr></thead>
                 <tbody>
                   {sorted.slice(0, 50).map((e, i) => (
-                    <tr key={e.id}>
+                    <tr key={e.dub_id || e.id}>
                       <td className="muted">{i + 1}</td>
-                      <td><Link to={`/episodes/${e.id}`}>{e.title}</Link> {e.url && <a className="tap-icon" href={e.url} target="_blank" rel="noreferrer" title="Open on YouTube" aria-label="Open on YouTube"><Icon name="external" size={12} /></a>}<div className="muted tiny">{e.category}</div></td>
+                      <td><ChannelBadge it={e} /> <Link to={e.channel === 'world' ? `/episodes/${e.id}?dub=${e.lang}` : `/episodes/${e.id}`}>{e.title}</Link> {e.url && <a className="tap-icon" href={e.url} target="_blank" rel="noreferrer" title="Open on YouTube" aria-label="Open on YouTube"><Icon name="external" size={12} /></a>}<div className="muted tiny">{e.category}</div></td>
                       <td className="num">{fmtNum(e.views)}</td>
                       <td className="num">{fmtNum(e.likes)}</td>
                       <td className="bar-cell"><Bar value={(e.avg_pct || 0) * k} max={100} tone="green" /><span>{pct(e.avg_pct, k)}</span></td>

@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { post } from '../api'
+import { ChannelSwitch } from './channel'
 import Icon from './icons'
 import Sun from './Sun'
 import { ErrorBoundary, Spinner, useAction, useApi } from './ui'
@@ -52,6 +53,7 @@ export default function Layout({ theme, setTheme, onLogout }) {
       <header className="topbar">
         <button className="icon-btn" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open}><Icon name="menu" size={20} /></button>
         <Link to="/" className="brand mini"><Sun size={28} /><b>CartoonForge</b></Link>
+        <ChannelSwitch compact />
         <Link to="/create" className="btn primary sm"><Icon name="plus" size={16} />New</Link>
       </header>
 
@@ -70,6 +72,7 @@ export default function Layout({ theme, setTheme, onLogout }) {
         </div>
 
         <Link to="/create" className="btn primary block sb-create"><Icon name="plus" size={17} strokeWidth={2.2} />New episode</Link>
+        <ChannelSwitch />
 
         <div className="sb-scroll">
           {NAV.map(([group, items]) => (

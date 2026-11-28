@@ -2,9 +2,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { mediaUrl, post } from '../api'
 import AutomationCard from '../components/AutomationCard'
 import { EpisodeCard, MiniCard, Thumb } from '../components/EpisodeCard'
+import { ChannelBadge, CHANNELS, inChannel, useChannel } from '../components/channel'
 import Icon from '../components/icons'
 import {
-  ago, Badge, Empty, fmtDate, fmtNum, isLive, SafeImg, Skeleton, shownStatus, Spinner, Stat, StatusPill, until, useAction, useApi, useCategoryMap,
+  ago, Badge, Empty, fmtDate, fmtNum, isLive, SafeImg, Skeleton, shownStatus, Spinner, Stat, until, useAction, useApi, useCategoryMap,
 } from '../components/ui'
 
 const PIPE = [
@@ -37,14 +38,16 @@ function AttentionItem({ icon, tone, title, children, to, action }) {
 export default function Home() {
   const nav = useNavigate()
   const ov = useApi('/overview', { ms: (d) => (d?.worker?.busy ? 5000 : 30000) })
-  const eps = useApi('/episodes', { ms: (d) => (Array.isArray(d) && d.some(isLive) ? 5000 : 30000) })
+  const [channel] = useChannel()
+  const eps = useApi('/episodes?channel=all', { ms: (d) => (Array.isArray(d) && d.some(isLive) ? 5000 : 30000) })
   const [, catMap] = useCategoryMap()
   const settings = useApi('/settings', { quiet: true }).data
   const [busy, run] = useAction()
 
   const o = ov.data
   const s = o?.settings_summary
-  const list = Array.isArray(eps.data) ? eps.data : []
+  const list = (Array.isArray(eps.data) ? eps.data : []).filter((e) => inChannel(e, channel))
+  const dub = o?.dub_channel
   const counts = o?.counts || {}
   const ch = o?.channel
   const bar = settings?.quality_bar
@@ -71,7 +74,7 @@ export default function Home() {
       <section className="home-hero">
         <div className="home-hero-text">
           <div className="eyebrow"><Icon name="sun" size={14} />{greeting()}</div>
-          <h1>{s?.channel_name || 'Hoppy Hop Hop'} Studio</h1>
+          <h1>{channel === 'world' ? CHANNELS.world.label : channel === 'en' ? (s?.channel_name || 'Hoppy Hop Hop') : `${s?.channel_name || 'Hoppy Hop Hop'} Studio`}</h1>
           <p className="sub">
             {s ? <>Ages <b>{s.age_band}</b> · <b>{s.target_minutes}</b>-minute episodes · {s.autopilot ? 'Autopilot publishes episodes that clear the bar' : 'Every episode waits for your review'}</> : <span className="skel sub-skel" />}
           </p>
@@ -94,19 +97,32 @@ export default function Home() {
             <div className="next-pub" aria-busy="true">
               <Skeleton h={16} w="85%" /><Skeleton h={16} w="55%" /><Skeleton h={14} w="45%" /><Skeleton h={22} w={96} r={999} />
             </div>
-          ) : o.next_publish ? (
-            <Link to={`/episodes/${o.next_publish.id}`} className="next-pub">
-              <b>{o.next_publish.title}</b>
-              <span>{fmtDate(o.next_publish.publish_at)}</span>
-              <Badge tone="green" icon="clock" size="sm">in {until(o.next_publish.publish_at)}</Badge>
-            </Link>
+          ) : (channel !== 'world' && o.next_publish) || (channel !== 'en' && dub?.next) ? (
+            <div className="next-pub-pair">
+              {channel !== 'world' && o.next_publish && (
+                <Link to={`/episodes/${o.next_publish.id}`} className="next-pub">
+                  <ChannelBadge it={{ channel: 'en' }} full />
+                  <b>{o.next_publish.title}</b>
+                  <span>{fmtDate(o.next_publish.publish_at)}</span>
+                  <Badge tone="green" icon="clock" size="sm">in {until(o.next_publish.publish_at)}</Badge>
+                </Link>
+              )}
+              {channel !== 'en' && dub?.next && (
+                <Link to={`/episodes/${dub.next.id}?dub=${dub.next.lang}`} className="next-pub">
+                  <ChannelBadge it={{ channel: 'world', lang: dub.next.lang }} full />
+                  <b>{dub.next.title}</b>
+                  <span>{fmtDate(dub.next.publish_at)}</span>
+                  <Badge tone="violet" icon="clock" size="sm">in {until(dub.next.publish_at)}</Badge>
+                </Link>
+              )}
+            </div>
           ) : (
             <div className="next-pub empty-next">
               <b>Nothing scheduled</b>
               <span>Approve an episode in review to fill the next slot.</span>
             </div>
           )}
-          <div className="hero-sprites" aria-hidden="true">
+          <div className={`hero-sprites ${channel === 'all' && o?.next_publish && dub?.next ? 'hide' : ''}`} aria-hidden="true">
             {['sunny', 'hoppy', 'mimi'].map((id, i) => <SafeImg key={id} src={`/api/cast/${id}.png?emotion=${i === 1 ? 'excited' : 'happy'}&arms=${i === 0 ? 'wave' : 'down'}&size=200`} className={`sprite s${i}`} />)}
           </div>
         </div>
@@ -119,8 +135,10 @@ export default function Home() {
             <Stat icon="film" tone="violet" label="In production" value={inProd} sub={o.worker?.busy && o.worker.current ? `${o.worker.current.stage}…` : null} />
             <Stat icon="calendar" tone="green" label="Scheduled" value={(counts.approved || 0) + (counts.publishing || 0) + upcoming}
               sub={upcoming ? `${upcoming} already on YouTube, going public on time` : null} />
-            {ch?.connected
-              ? <Stat icon="users" tone="blue" label="Subscribers" value={fmtNum(ch.subscribers)} sub={`${fmtNum(ch.views)} views`} />
+            {channel === 'world' && dub?.connected
+              ? <Stat icon="globe" tone="violet" label="Subscribers · World" value={fmtNum(dub.subscribers)} sub={`${dub.counts?.live || 0} dubs live · ${dub.counts?.upcoming || 0} going live`} />
+              : ch?.connected
+              ? <Stat icon="users" tone="blue" label={channel === 'all' ? 'Subscribers (both)' : 'Subscribers'} value={fmtNum((ch.subscribers || 0) + (channel === 'all' ? dub?.subscribers || 0 : 0))} sub={`${fmtNum((ch.views || 0) + (channel === 'all' ? dub?.views || 0 : 0))} views`} />
               : <Stat icon="star" tone="pink" label="Published" value={counts.published || 0} sub={counts.failed ? `${counts.failed} failed` : null} />}
           </>
         )}
@@ -202,15 +220,31 @@ export default function Home() {
         </section>
       )}
 
-      {ch?.connected && (
-        <section className="card channel-mini">
-          {ch.thumb ? <img src={mediaUrl(ch.thumb)} alt="" className="ch-thumb" /> : <span className="ch-thumb ph"><Icon name="tv" /></span>}
-          <div className="grow">
-            <b>{ch.title}</b>
-            <div className="muted small">{fmtNum(ch.subscribers)} subscribers · {fmtNum(ch.views)} views · {fmtNum(ch.videos)} videos</div>
-          </div>
-          <StatusPill status="published" small />
-          <Link to="/insights/analytics" className="btn sm"><Icon name="chart" size={15} />Analytics</Link>
+      {o && (
+        <section className="ch-pair">
+          {[['en', ch], ['world', dub]].map(([k, c]) => (
+            <div key={k} className={`card ch-panel ${k}`}>
+              <div className="row between">
+                <h2>{c?.thumb ? <img src={mediaUrl(c.thumb)} alt="" className="ch-thumb" /> : <span aria-hidden="true">{CHANNELS[k].emoji}</span>}{c?.title || CHANNELS[k].label}</h2>
+                <ChannelBadge it={{ channel: k }} />
+              </div>
+              {c?.connected ? (
+                <>
+                  <div className="ch-nums muted small">
+                    <span><b>{fmtNum(c.subscribers)}</b>subscribers</span>
+                    <span><b>{fmtNum(c.views)}</b>views</span>
+                    <span><b>{fmtNum(c.videos)}</b>videos</span>
+                  </div>
+                  <p className="muted small">{k === 'en' ? 'English episodes, Shorts and compilations.'
+                    : `Dubs in ${(c.languages || []).map((l) => l.toUpperCase()).join(', ') || 'no languages yet'} · ${c.counts?.queued || 0} queued · ${c.counts?.upcoming || 0} going live${c.counts?.failed ? ` · ${c.counts.failed} need attention` : ''}`}</p>
+                </>
+              ) : <p className="muted small">Not connected yet.</p>}
+              <div className="row">
+                <Link to="/channel" className="btn sm"><Icon name="tv" size={15} />{c?.connected ? 'Channel' : 'Connect'}</Link>
+                <Link to="/insights/analytics" className="btn sm ghost"><Icon name="chart" size={15} />Analytics</Link>
+              </div>
+            </div>
+          ))}
         </section>
       )}
     </div>

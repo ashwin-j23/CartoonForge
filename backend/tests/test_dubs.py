@@ -91,7 +91,7 @@ def test_upload_uses_the_dubbed_channel_with_the_same_picture(monkeypatch, tmp_p
             return [ep]
 
         def get_setting(self, k, d=None):
-            return {"title": "Hoppy World"}
+            return {"title": "Hoppy World", "t": 9e12}
     monkeypatch.setattr(dubs, "get_db", lambda: DB())
     monkeypatch.setattr(dubs, "token", lambda: "DUB")
     monkeypatch.setattr(dubs, "app_settings", lambda: {"timezone": "UTC", "editions": ["es"]})
