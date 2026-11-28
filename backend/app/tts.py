@@ -447,8 +447,9 @@ def _edge_tts(text, voice, rate, mood):
 
     async def run():
         kw = {"rate": rate, "boundary": "WordBoundary"}
-        if os.getenv("TTS_PROXY"):
-            kw["proxy"] = os.getenv("TTS_PROXY")
+        proxy = os.getenv("TTS_PROXY") or os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+        if proxy:                                  # aiohttp ignores the proxy settings unless given one
+            kw["proxy"] = proxy
         com = edge_tts.Communicate(text, voice, **kw)
         audio, words = bytearray(), []
         async for ch in com.stream():
